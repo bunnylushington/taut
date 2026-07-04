@@ -35,15 +35,18 @@
 
 ;;;; Major Mode Definition
 
-(defvar taut-thread-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "r") #'taut-message-reply-normal)
-    (define-key map (kbd "R") #'taut-message-reply-quote)
-    (define-key map (kbd "g") #'taut-thread-refresh)
-    (define-key map (kbd "q") #'taut-thread-close)
-    (define-key map (kbd "?") #'taut-dispatch)
-    map)
+(defvar taut-thread-mode-map (make-sparse-keymap)
   "Keymap for `taut-thread-mode`.")
+
+(define-key taut-thread-mode-map (kbd "r") #'taut-message-reply-normal)
+(define-key taut-thread-mode-map (kbd "R") #'taut-message-reply-quote)
+(define-key taut-thread-mode-map (kbd "g") #'taut-thread-refresh)
+(define-key taut-thread-mode-map (kbd "q") #'taut-thread-close)
+(define-key taut-thread-mode-map (kbd "v") #'taut-message-view-at-point)
+(define-key taut-thread-mode-map (kbd "e") #'taut-message-view-at-point)
+(define-key taut-thread-mode-map (kbd "s") #'taut-message-save-at-point)
+(define-key taut-thread-mode-map (kbd "c") #'taut-message-copy-at-point)
+(define-key taut-thread-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-thread-mode special-mode "Taut-Thread"
   "Major mode for the Taut side-by-side Thread Discussion view.
@@ -52,6 +55,9 @@
   (setq buffer-read-only t
         word-wrap t
         wrap-prefix "         ")
+  (setq-local view-read-only nil)
+  (when (and (boundp 'view-mode) view-mode)
+    (view-mode -1))
   (visual-line-mode 1))
 
 ;;;; Rendering Engine

@@ -32,7 +32,7 @@
 (declare-function taut-thread-close "taut-thread")
 
 (declare-function taut-code-block-copy "taut-message")
-(declare-function taut-code-block-edit "taut-message")
+(declare-function taut-code-block-view "taut-message")
 (declare-function taut-code-block-save "taut-message")
 
 (declare-function taut-compose-send "taut-compose")
@@ -67,7 +67,7 @@
   ["💻 Code Block Actions"
    ["Operations"
     ("c" "Copy Block to Clipboard" taut-code-block-copy)
-    ("e" "Edit in Native Major Mode" taut-code-block-edit)
+    ("v" "View in Native Major Mode" taut-code-block-view)
     ("s" "Save Block to File"      taut-code-block-save)]])
 
 ;;;###autoload

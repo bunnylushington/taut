@@ -57,10 +57,8 @@
   :group 'taut-faces)
 
 (defface taut-message-code
-  '((((background dark))  :inherit fixed-pitch :background "#2d3748" :height 0.9)
-    (((background light)) :inherit fixed-pitch :background "#f4f4f4" :height 0.9)
-    (t                    :inherit fixed-pitch :background "#f4f4f4" :height 0.9))
-  "Face for inline markdown `code` blocks."
+  '((t :inherit fixed-pitch :height 0.9))
+  "Face for inline and multi-line markdown `code` blocks."
   :group 'taut-faces)
 
 (defface taut-message-reaction
@@ -92,17 +90,16 @@
 (defvar-local taut-expanded-threads nil
   "List of thread-ts currently expanded inline in this buffer.")
 
-(defvar taut-code-block-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "c") #'taut-code-block-copy)
-    (define-key map (kbd "e") #'taut-code-block-edit)
-    (define-key map (kbd "s") #'taut-code-block-save)
-    (define-key map (kbd "C-c C-y") #'taut-code-block-copy)
-    (define-key map (kbd "C-c C-e") #'taut-code-block-edit)
-    (define-key map (kbd "C-c C-s") #'taut-code-block-save)
-    (define-key map (kbd "?") #'taut-code-block-dispatch)
-    map)
+(defvar taut-code-block-map (make-sparse-keymap)
   "Keymap active inside code blocks.")
+
+(define-key taut-code-block-map (kbd "c") #'taut-code-block-copy)
+(define-key taut-code-block-map (kbd "v") #'taut-code-block-view)
+(define-key taut-code-block-map (kbd "s") #'taut-code-block-save)
+(define-key taut-code-block-map (kbd "C-c C-y") #'taut-code-block-copy)
+(define-key taut-code-block-map (kbd "C-c C-v") #'taut-code-block-view)
+(define-key taut-code-block-map (kbd "C-c C-s") #'taut-code-block-save)
+(define-key taut-code-block-map (kbd "?") #'taut-code-block-dispatch)
 
 (defun taut-code-block-copy ()
   "Copy the raw contents of the code block at point to the kill ring."
@@ -114,7 +111,7 @@
           (message "Copied code block contents to clipboard."))
       (message "No code block found at point."))))
 
-(defun taut-code-block-edit ()
+(defun taut-code-block-view ()
   "Pop open a temporary buffer with the code in its native major-mode."
   (interactive)
   (let ((code (get-text-property (point) 'taut-code-block-content))
@@ -182,21 +179,45 @@
   (posn-set-point (event-end event))
   (taut-message-button-open-thread))
 
+(defun taut-message-view-at-point ()
+  "View the code block at point, if any."
+  (interactive)
+  (if (get-text-property (point) 'taut-code-block-content)
+      (call-interactively #'taut-code-block-view)
+    (message "No code block under cursor.")))
+
+(defun taut-message-copy-at-point ()
+  "Copy the code block at point, if any."
+  (interactive)
+  (if (get-text-property (point) 'taut-code-block-content)
+      (call-interactively #'taut-code-block-copy)
+    (message "No code block under cursor.")))
+
+(defun taut-message-save-at-point ()
+  "Save the code block at point, if any."
+  (interactive)
+  (if (get-text-property (point) 'taut-code-block-content)
+      (call-interactively #'taut-code-block-save)
+    (message "No code block under cursor.")))
+
 ;;;; Major Mode Definition
 
-(defvar taut-message-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "r") #'taut-message-reply-normal)
-    (define-key map (kbd "R") #'taut-message-reply-quote)
-    (define-key map (kbd "t") #'taut-message-start-thread)
-    (define-key map (kbd "RET") #'taut-message-start-thread)
-    (define-key map (kbd "TAB") #'taut-message-toggle-thread-inline)
-    (define-key map (kbd "a") #'taut-message-add-reaction)
-    (define-key map (kbd "g") #'taut-message-refresh)
-    (define-key map (kbd "q") #'taut-message-bury)
-    (define-key map (kbd "?") #'taut-dispatch)
-    map)
+(defvar taut-message-mode-map (make-sparse-keymap)
   "Keymap for `taut-message-mode`.")
+
+(define-key taut-message-mode-map (kbd "r") #'taut-message-reply-normal)
+(define-key taut-message-mode-map (kbd "R") #'taut-message-reply-quote)
+(define-key taut-message-mode-map (kbd "t") #'taut-message-start-thread)
+(define-key taut-message-mode-map (kbd "RET") #'taut-message-start-thread)
+(define-key taut-message-mode-map (kbd "TAB") #'taut-message-toggle-thread-inline)
+(define-key taut-message-mode-map (kbd "a") #'taut-message-add-reaction)
+(define-key taut-message-mode-map (kbd "g") #'taut-message-refresh)
+(define-key taut-message-mode-map (kbd "q") #'taut-message-bury)
+(define-key taut-message-mode-map (kbd "v") #'taut-message-view-at-point)
+(define-key taut-message-mode-map (kbd "e") #'taut-message-view-at-point)
+(define-key taut-message-mode-map (kbd "s") #'taut-message-save-at-point)
+(define-key taut-message-mode-map (kbd "c") #'taut-message-copy-at-point)
+(define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
   "Major mode for a Taut Slack conversation buffer.
@@ -205,6 +226,9 @@
   (setq buffer-read-only t
         word-wrap t
         wrap-prefix "         ") ; Align wrapped text under usernames nicely (9 spaces)
+  (setq-local view-read-only nil)
+  (when (and (boundp 'view-mode) view-mode)
+    (view-mode -1))
   (visual-line-mode 1))
 
 ;;;; Rendering Engine
@@ -594,20 +618,30 @@ ROOT-TS is the timestamp of the parent message."
          (code (or code ""))
          (start-pos (point))
          (border-char ?─)
-         (width (or (and (window-live-p (selected-window)) (- (window-body-width) 14)) 60))
+         (width 40)
          (border-line (make-string width border-char))
          (code-face 'taut-message-code)
          (margin-prefix (concat prefix "│  ")))
     
     ;; Render top border with language label
     (insert "\n" prefix "┌" border-line "\n")
-    (insert prefix "│  " (propertize (format "💻 CODE (%s) - [c:copy, e:edit, s:save]" (if (string-blank-p lang) "text" (upcase lang))) 'face '(:weight bold :foreground "#8a8a8a")) "\n")
+    (insert prefix "│  " (propertize (format "💻 CODE (%s) - [c:copy, v:view, s:save]" (if (string-blank-p lang) "text" (upcase lang))) 'face '(:weight bold :foreground "#8a8a8a")) "\n")
     (insert prefix "├" border-line "\n")
     
-    ;; Insert code content with prefix on each line
-    (let ((lines (split-string code "\n")))
-      (dolist (line lines)
-        (insert margin-prefix (propertize line 'face code-face) "\n")))
+    ;; Insert code content with prefix on each line, limited to 10 lines
+    (let* ((lines (split-string code "\n"))
+           (total-count (length lines))
+           (max-lines 10)
+           (show-lines (if (> total-count max-lines)
+                           (butlast lines (- total-count max-lines))
+                         lines))
+           (hidden-count (- total-count max-lines)))
+      (dolist (line show-lines)
+        (insert margin-prefix (propertize (concat line "\n") 'face code-face)))
+      (when (> hidden-count 0)
+        (insert margin-prefix
+                (propertize (format "... (+%d lines hidden, press v to view) ...\n" hidden-count)
+                            'face (list '(:slant italic :foreground "#8a8a8a") code-face)))))
     
     ;; Render bottom border
     (insert prefix "└" border-line "\n")
@@ -624,37 +658,45 @@ ROOT-TS is the timestamp of the parent message."
   (let* ((text (or text ""))
          (start-pos (point))
          (start 0)
-         (trimmed-text (string-trim text)))
-    ;; Check if the text contains a Slack file snippet fallback pattern anywhere
-    ;; format: ```<filename>\n```\n<content>
-    (if (string-match "```\\([^\n\r]+\\)\r?\n```\r?\n\\([^\000]*?\\)\\(?:\r?\n[ \t\r]*```\\)?\\'" trimmed-text)
-        (let ((pre-text (substring trimmed-text 0 (match-beginning 0)))
-              (filename (match-string 1 trimmed-text))
-              (content (match-string 2 trimmed-text)))
+         (len (length text)))
+    (while (and (< start len)
+                (string-match "```\\([^\n\r]*\\)\r?\n" text start))
+      (let* ((match-start (match-beginning 0))
+             (match-end (match-end 0))
+             (lang (string-trim (match-string 1 text)))
+             (code nil)
+             (block-end nil))
+        
+        ;; Insert preceding normal text
+        (let ((pre-text (substring text start match-start)))
           (unless (string-blank-p pre-text)
-            (taut-message--insert-formatted-text-normal pre-text prefix))
-          (taut-message--insert-code-block-rendered filename content (or prefix "         ")))
-      
-      ;; Normal multi-line code blocks matching loop
-      (while (string-match "```\\([^\n\r]*\\)\r?\n\\([^\000]*?\\)\r?\n[ \t\r]*```" text start)
-        (let ((match-start (match-beginning 0))
-              (match-end (match-end 0))
-              (lang (string-trim (or (match-string 1 text) "")))
-              (code (match-string 2 text)))
-          ;; Insert normal text preceding the code block
-          (let ((pre-text (substring text start match-start)))
-            (unless (string-blank-p pre-text)
-              (taut-message--insert-formatted-text-normal pre-text prefix)))
+            (taut-message--insert-formatted-text-normal pre-text prefix)))
+        
+        ;; Check if this is a file snippet fallback block: ```lang\n```\n<content>
+        (if (and (not (string-blank-p lang))
+                 (string-match "\\````\r?\n" (substring text match-end)))
+            (let ((content-start (+ match-end (match-end 0))))
+              (if (string-match "\r?\n[ \t\r]*```" text content-start)
+                  (setq code (substring text content-start (match-beginning 0))
+                        block-end (match-end 0))
+                (setq code (substring text content-start)
+                      block-end len)))
           
-          ;; Insert the rendered code block
-          (taut-message--insert-code-block-rendered lang code (or prefix "         "))
-          
-          (setq start match-end)))
-      
-      ;; Insert trailing normal text
-      (let ((post-text (substring text start)))
-        (unless (string-blank-p post-text)
-          (taut-message--insert-formatted-text-normal post-text prefix))))
+          ;; Normal code block: ```lang\n<code>\n```
+          (if (string-match "\r?\n[ \t\r]*```" text match-end)
+              (setq code (substring text match-end (match-beginning 0))
+                    block-end (match-end 0))
+            (setq code (substring text match-end)
+                  block-end len)))
+        
+        ;; Render the code block
+        (taut-message--insert-code-block-rendered lang code (or prefix "         "))
+        (setq start block-end)))
+    
+    ;; Insert trailing normal text
+    (let ((post-text (substring text start)))
+      (unless (string-blank-p post-text)
+        (taut-message--insert-formatted-text-normal post-text prefix)))
     
     (when prefix
       (add-text-properties start-pos (point) (list 'wrap-prefix prefix)))))
