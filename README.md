@@ -92,7 +92,7 @@ Add Taut to your `load-path` or use `straight.el` / `use-package`:
   :config
   ;; Automatically load credentials on startup
   (taut-api-load-tokens-from-authinfo)
-  
+
   ;; Configure sidebar default width (optional)
   (setq taut-sidebar-width 60))
 ```
@@ -140,4 +140,4 @@ Taut compiles cleanly with zero warnings or errors.
 ---
 
 ## 📄 License
-Copyright (C) 2026 Google DeepMind. Distributed under the MIT License.
+Copyright (C) 2026 Bunny Lushington. Distributed under the MIT License.
