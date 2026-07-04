@@ -626,8 +626,8 @@ ROOT-TS is the timestamp of the parent message."
          (start 0)
          (trimmed-text (string-trim text)))
     ;; Check if the text contains a Slack file snippet fallback pattern anywhere
-    ;; format: ```\n<filename>\n```\n<content>
-    (if (string-match "```\r?\n\\([^\n\r]+\\)\r?\n```\r?\n\\([^\000]*?\\)\\(?:\r?\n[ \t\r]*```\\)?\\'" trimmed-text)
+    ;; format: ```<filename>\n```\n<content>
+    (if (string-match "```\\([^\n\r]+\\)\r?\n```\r?\n\\([^\000]*?\\)\\(?:\r?\n[ \t\r]*```\\)?\\'" trimmed-text)
         (let ((pre-text (substring trimmed-text 0 (match-beginning 0)))
               (filename (match-string 1 trimmed-text))
               (content (match-string 2 trimmed-text)))
