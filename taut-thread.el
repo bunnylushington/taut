@@ -21,7 +21,9 @@
 ;;;; Faces
 
 (defface taut-thread-root-header
-  '((t :background "#611f69" :foreground "#ffffff" :weight bold :box (:line-width (2 . -1) :style flat-button)))
+  '((((background dark))  :background "#4a154b" :foreground "#f78af2" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (((background light)) :background "#611f69" :foreground "#ffffff" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (t                    :background "#611f69" :foreground "#ffffff" :weight bold :box (:line-width (2 . -1) :style flat-button)))
   "Face for the thread root message header label."
   :group 'taut-faces)
 

@@ -19,37 +19,51 @@
 ;;;; Faces
 
 (defface taut-inbox-unread-star
-  '((t :foreground "#e01e5a" :weight bold))
+  '((((background dark))  :foreground "#ff4a80" :weight bold)
+    (((background light)) :foreground "#e01e5a" :weight bold)
+    (t                    :foreground "#e01e5a" :weight bold))
   "Face for the unread indicator asterisk."
   :group 'taut-faces)
 
 (defface taut-inbox-time
-  '((t :foreground "#8a8a8a" :weight normal))
+  '((((background dark))  :foreground "#a0aec0" :weight normal)
+    (((background light)) :foreground "#8a8a8a" :weight normal)
+    (t                    :foreground "#8a8a8a" :weight normal))
   "Face for timestamps in the inbox list."
   :group 'taut-faces)
 
 (defface taut-inbox-title
-  '((t :foreground "#1d1c1d" :weight bold))
+  '((((background dark))  :foreground "#ffffff" :weight bold)
+    (((background light)) :foreground "#1d1c1d" :weight bold)
+    (t                    :foreground "#1d1c1d" :weight bold))
   "Face for the inbox source title (channel name or user name)."
   :group 'taut-faces)
 
 (defface taut-inbox-snippet
-  '((t :foreground "#555555" :weight normal))
+  '((((background dark))  :foreground "#cbd5e0" :weight normal)
+    (((background light)) :foreground "#555555" :weight normal)
+    (t                    :foreground "#555555" :weight normal))
   "Face for message preview text."
   :group 'taut-faces)
 
 (defface taut-inbox-type-dm
-  '((t :background "#e3f2fd" :foreground "#0d47a1" :weight bold :box (:line-width (2 . -1) :style flat-button)))
+  '((((background dark))  :background "#1a365d" :foreground "#90cdf4" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (((background light)) :background "#e3f2fd" :foreground "#0d47a1" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (t                    :background "#e3f2fd" :foreground "#0d47a1" :weight bold :box (:line-width (2 . -1) :style flat-button)))
   "Face for [DM] labels."
   :group 'taut-faces)
 
 (defface taut-inbox-type-mention
-  '((t :background "#fbe9e7" :foreground "#b71c1c" :weight bold :box (:line-width (2 . -1) :style flat-button)))
+  '((((background dark))  :background "#742a2a" :foreground "#feb2b2" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (((background light)) :background "#fbe9e7" :foreground "#b71c1c" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (t                    :background "#fbe9e7" :foreground "#b71c1c" :weight bold :box (:line-width (2 . -1) :style flat-button)))
   "Face for [Mention] labels."
   :group 'taut-faces)
 
 (defface taut-inbox-type-thread
-  '((t :background "#e8f5e9" :foreground "#1b5e20" :weight bold :box (:line-width (2 . -1) :style flat-button)))
+  '((((background dark))  :background "#22543d" :foreground "#9ae6b4" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (((background light)) :background "#e8f5e9" :foreground "#1b5e20" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (t                    :background "#e8f5e9" :foreground "#1b5e20" :weight bold :box (:line-width (2 . -1) :style flat-button)))
   "Face for [Thread] labels."
   :group 'taut-faces)
 

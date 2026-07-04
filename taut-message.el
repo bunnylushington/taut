@@ -20,17 +20,23 @@
 ;;;; Faces
 
 (defface taut-message-username
-  '((t :foreground "#4a154b" :weight bold))
+  '((((background dark))  :foreground "#d3a4ff" :weight bold)
+    (((background light)) :foreground "#4a154b" :weight bold)
+    (t                    :foreground "#4a154b" :weight bold))
   "Face for sender usernames."
   :group 'taut-faces)
 
 (defface taut-message-me
-  '((t :foreground "#611f69" :weight bold))
+  '((((background dark))  :foreground "#f78af2" :weight bold)
+    (((background light)) :foreground "#611f69" :weight bold)
+    (t                    :foreground "#611f69" :weight bold))
   "Face for the current user's username."
   :group 'taut-faces)
 
 (defface taut-message-timestamp
-  '((t :foreground "#8a8a8a" :height 0.8))
+  '((((background dark))  :foreground "#718096" :height 0.8)
+    (((background light)) :foreground "#8a8a8a" :height 0.8)
+    (t                    :foreground "#8a8a8a" :height 0.8))
   "Face for message timestamps."
   :group 'taut-faces)
 
@@ -40,27 +46,37 @@
   :group 'taut-faces)
 
 (defface taut-message-mention
-  '((t :background "#fff3cd" :foreground "#856404" :weight bold :box (:line-width (1 . -1) :style flat-button)))
+  '((((background dark))  :background "#4a3e1d" :foreground "#ffeb3b" :weight bold :box (:line-width (1 . -1) :style flat-button))
+    (((background light)) :background "#fff3cd" :foreground "#856404" :weight bold :box (:line-width (1 . -1) :style flat-button))
+    (t                    :background "#fff3cd" :foreground "#856404" :weight bold :box (:line-width (1 . -1) :style flat-button)))
   "Face for @mentions in messages."
   :group 'taut-faces)
 
 (defface taut-message-code
-  '((t :inherit separator-line :background "#f4f4f4" :family "monospace" :height 0.9))
+  '((((background dark))  :inherit separator-line :background "#2d3748" :family "monospace" :height 0.9)
+    (((background light)) :inherit separator-line :background "#f4f4f4" :family "monospace" :height 0.9)
+    (t                    :inherit separator-line :background "#f4f4f4" :family "monospace" :height 0.9))
   "Face for inline markdown `code` blocks."
   :group 'taut-faces)
 
 (defface taut-message-reaction
-  '((t :background "#f8f9fa" :foreground "#495057" :box (:line-width (1 . -1) :color "#dee2e6" :style flat-button) :height 0.85))
+  '((((background dark))  :background "#2d3748" :foreground "#cbd5e0" :box (:line-width (1 . -1) :color "#4a5568" :style flat-button) :height 0.85)
+    (((background light)) :background "#f8f9fa" :foreground "#495057" :box (:line-width (1 . -1) :color "#dee2e6" :style flat-button) :height 0.85)
+    (t                    :background "#f8f9fa" :foreground "#495057" :box (:line-width (1 . -1) :color "#dee2e6" :style flat-button) :height 0.85))
   "Face for message reactions."
   :group 'taut-faces)
 
 (defface taut-message-thread-link
-  '((t :foreground "#1264a3" :weight bold :underline t :height 0.9))
+  '((((background dark))  :foreground "#63b3ed" :weight bold :underline t :height 0.9)
+    (((background light)) :foreground "#1264a3" :weight bold :underline t :height 0.9)
+    (t                    :foreground "#1264a3" :weight bold :underline t :height 0.9))
   "Face for clickable thread reply markers."
   :group 'taut-faces)
 
 (defface taut-message-active-thread
-  '((t :background "#f1f3f4" :extend t))
+  '((((background dark))  :background "#2d3748" :extend t)
+    (((background light)) :background "#f1f3f4" :extend t)
+    (t                    :background "#f1f3f4" :extend t))
   "Face for highlighting the parent message of the active thread."
   :group 'taut-faces)
 
