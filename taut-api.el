@@ -182,26 +182,54 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
   (message "Taut: Synced %d active conversations." (hash-table-count taut-channels)))
 
 (defun taut-api-fetch-starred ()
-  "Fetch starred items from Slack and mark channels as starred."
+  "Fetch starred items from Slack and mark channels and messages as starred."
   (interactive)
-  (message "Taut: Syncing starred conversations...")
+  (message "Taut: Syncing starred items...")
   (condition-case err
       (let* ((res (taut-api--request "stars.list" nil "GET"))
              (items (cdr (assoc 'items res)))
-             (starred-count 0))
+             (starred-chan-count 0)
+             (starred-msg-count 0))
         (dolist (item items)
-          (let* ((type (cdr (assoc 'type item)))
-                 (chan-id (cond
-                           ((string= type "channel") (cdr (assoc 'channel item)))
-                           ((string= type "group") (cdr (assoc 'group item)))
-                           ((string= type "im") (cdr (assoc 'im item)))
-                           (t nil))))
-            (when chan-id
-              (let ((chan (taut-model-get-channel chan-id)))
-                (when chan
-                  (setf (taut-channel-is-starred chan) t)
-                  (cl-incf starred-count))))))
-        (message "Taut: Synced %d starred conversations." starred-count))
+          (let* ((type (cdr (assoc 'type item))))
+            (cond
+             ;; Handle starred channels / groups / IMs
+             ((member type '("channel" "group" "im"))
+              (let* ((chan-id (cond
+                               ((string= type "channel") (cdr (assoc 'channel item)))
+                               ((string= type "group") (cdr (assoc 'group item)))
+                               ((string= type "im") (cdr (assoc 'im item)))
+                               (t nil))))
+                (when chan-id
+                  (let ((chan (taut-model-get-channel chan-id)))
+                    (when chan
+                      (setf (taut-channel-is-starred chan) t)
+                      (cl-incf starred-chan-count))))))
+             ;; Handle starred messages (bookmarks)
+             ((string= type "message")
+              (let* ((chan-id (cdr (assoc 'channel item)))
+                     (msg-data (cdr (assoc 'message item)))
+                     (ts (cdr (assoc 'ts msg-data)))
+                     (user-id (or (cdr (assoc 'user msg-data)) (cdr (assoc 'bot_id msg-data)) "unknown"))
+                     (raw-text (or (cdr (assoc 'text msg-data)) ""))
+                     (text (taut-api-unescape-html raw-text))
+                     (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
+                     (thread-ts (cdr (assoc 'thread_ts msg-data))))
+                (when (and chan-id ts)
+                  (let ((msg (make-taut-message
+                              :id (concat "msg_" ts)
+                              :channel-id chan-id
+                              :user-id user-id
+                              :text text
+                              :ts ts
+                              :thread-ts thread-ts
+                              :is-unread nil
+                              :is-mention is-mention
+                              :is-starred t)))
+                    (taut-model-add-message msg)
+                    (cl-incf starred-msg-count))))))))
+        (message "Taut: Synced %d starred conversations and %d bookmarked messages."
+                 starred-chan-count starred-msg-count))
     (error
      (message "Taut: Starred sync failed: %s" (error-message-string err)))))
 
@@ -229,7 +257,9 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                         (taut-api--request "conversations.history" params "POST"))
                     (signal (car err) (cdr err))))))
          (messages (cdr (assoc 'messages res))))
-    (setf (gethash channel-id taut-messages) nil)
+    ;; Keep starred/bookmarked messages so we don't lose them when history is refreshed
+    (let ((starred-msgs (cl-remove-if-not #'taut-message-is-starred (gethash channel-id taut-messages))))
+      (setf (gethash channel-id taut-messages) starred-msgs))
     (dolist (m (nreverse messages))
       (let* ((ts (cdr (assoc 'ts m)))
              (subtype (cdr (assoc 'subtype m)))
@@ -243,6 +273,8 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                    (thread-ts (cdr (assoc 'thread_ts m)))
                    (reply-count (cdr (assoc 'reply_count m)))
                    (reactions (cdr (assoc 'reactions m)))
+                   (starred-val (cdr (assoc 'is_starred m)))
+                   (is-starred (and starred-val (not (eq starred-val :json-false))))
                    ;; Convert reactions list to taut model representation
                    (model-reactions nil))
               (dolist (r reactions)
@@ -263,7 +295,8 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                 :reply-count (or reply-count 0)
                 :reactions model-reactions
                 :is-unread nil
-                :is-mention is-mention)))))))
+                :is-mention is-mention
+                :is-starred is-starred)))))))
     (taut-model-trigger-update)))
 
 (defun taut-api-fetch-replies (channel-id thread-ts)
@@ -275,18 +308,25 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
     ;; Update root message's reply count from server's root message metadata
     (let* ((root-msg-data (car messages))
            (reply-count (cdr (assoc 'reply_count root-msg-data)))
+           (root-starred-val (cdr (assoc 'is_starred root-msg-data)))
+           (root-is-starred (and root-starred-val (not (eq root-starred-val :json-false))))
            (root-chan-msgs (gethash channel-id taut-messages))
            (root-msg (cl-find thread-ts root-chan-msgs :key #'taut-message-ts :test #'equal)))
       (when (and root-msg reply-count)
-        (setf (taut-message-reply-count root-msg) reply-count)))
-    ;; Reset old thread cache
-    (setf (gethash thread-ts taut-threads) nil)
+        (setf (taut-message-reply-count root-msg) reply-count))
+      (when (and root-msg root-starred-val)
+        (setf (taut-message-is-starred root-msg) root-is-starred)))
+    ;; Reset old thread cache, preserving any bookmarked replies
+    (let ((starred-replies (cl-remove-if-not #'taut-message-is-starred (gethash thread-ts taut-threads))))
+      (setf (gethash thread-ts taut-threads) starred-replies))
     ;; Skip the first message as it is the root message (already in channels history)
     (dolist (m (cdr messages))
       (let* ((ts (cdr (assoc 'ts m)))
              (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown"))
              (text (taut-api-unescape-html (or (cdr (assoc 'text m)) "")))
-             (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
+             (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
+             (starred-val (cdr (assoc 'is_starred m)))
+             (is-starred (and starred-val (not (eq starred-val :json-false)))))
         (when ts
           (taut-model-add-message
            (make-taut-message
@@ -298,7 +338,8 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :thread-ts thread-ts
             :reply-count 0
             :is-unread nil
-            :is-mention is-mention)
+            :is-mention is-mention
+            :is-starred is-starred)
            t))))
     (taut-model-trigger-update)))
 
@@ -334,7 +375,17 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                    (timestamp . ,timestamp)
                    (name . ,emoji-clean))))
     (taut-api--request "reactions.add" params "POST")))
+(defun taut-api-star-add (channel-id timestamp)
+  "Star/bookmark a message at TIMESTAMP in CHANNEL-ID."
+  (let ((params `((channel . ,channel-id)
+                  (timestamp . ,timestamp))))
+    (taut-api--request "stars.add" params "POST")))
 
+(defun taut-api-star-remove (channel-id timestamp)
+  "Unstar/unbookmark a message at TIMESTAMP in CHANNEL-ID."
+  (let ((params `((channel . ,channel-id)
+                  (timestamp . ,timestamp))))
+    (taut-api--request "stars.remove" params "POST")))
 (defun taut-api-open-dm (user-id)
   "Open or create a direct message channel with USER-ID."
   (let* ((user-id (or user-id "unknown"))

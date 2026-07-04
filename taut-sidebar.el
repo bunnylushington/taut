@@ -75,6 +75,7 @@
 
 (defvar taut-sidebar-section-state
   '((starred . t)
+    (bookmarks . t)
     (channels . t)
     (dms . t)
     (threads . t))
@@ -134,6 +135,7 @@
 
     ;; Render each section
     (taut-sidebar--render-section 'starred "★ STARRED" starred)
+    (taut-sidebar--render-bookmarks)
     (taut-sidebar--render-section 'channels "♯ CHANNELS" public-chans)
     (taut-sidebar--render-section 'dms "✉ DIRECT MESSAGES" dms)
     (taut-sidebar--render-section-threads)))
@@ -231,8 +233,11 @@
   (interactive)
   (let ((chan-id (get-text-property (point) 'taut-channel-id))
         (thread-ts (get-text-property (point) 'taut-thread-ts))
+        (bookmark-msg (get-text-property (point) 'taut-bookmark-msg))
         (section (get-text-property (point) 'taut-section)))
     (cond
+     (bookmark-msg
+      (taut-sidebar-open-bookmark bookmark-msg))
      (chan-id
       (taut-sidebar-open-channel chan-id))
      (thread-ts
@@ -259,6 +264,63 @@
   (let ((curr (alist-get sym taut-sidebar-section-state)))
     (setf (alist-get sym taut-sidebar-section-state) (not curr))
     (taut-sidebar-refresh)))
+
+(defun taut-sidebar--render-bookmarks ()
+  "Render the Bookmarks section."
+  (let* ((sym 'bookmarks)
+         (expanded (alist-get sym taut-sidebar-section-state))
+         (indicator (if expanded "▼" "▶"))
+         (items (taut-model-get-starred-messages)))
+    (insert (propertize (format "%s 🔖 BOOKMARKS\n" indicator)
+                        'face 'taut-sidebar-header
+                        'mouse-face 'highlight
+                        'taut-section sym))
+    (when expanded
+      (if (null items)
+          (insert "  (no bookmarks)\n")
+        (dolist (msg items)
+          (let* ((user (taut-model-get-user (taut-message-user-id msg)))
+                 (username (if user (or (taut-user-username user) "unknown") "unknown"))
+                 (text (taut-message-text msg))
+                 ;; Clean up text (replace newlines with spaces and limit snippet size)
+                 (snippet (replace-regexp-in-string "\n" " " (or text "")))
+                 (snippet (if (> (length snippet) 30) (concat (substring snippet 0 27) "...") snippet))
+                 (line-start (point)))
+            (insert "  ⭐ ")
+            (insert (propertize (format "@%s: " username) 'face 'font-lock-comment-face))
+            (insert (propertize snippet 'face 'taut-sidebar-channel))
+            (add-text-properties line-start (point)
+                                 (list 'taut-bookmark-msg msg
+                                       'mouse-face 'highlight))
+            (insert "\n")))))
+    (insert "\n")))
+
+(defun taut-sidebar-open-bookmark (msg)
+  "Open the conversation containing MSG and move point to it."
+  (let* ((chan-id (taut-message-channel-id msg))
+         (thread-ts (taut-message-thread-ts msg))
+         (msg-ts (taut-message-ts msg)))
+    (if (not chan-id)
+        (message "Error: Bookmarked message has no channel reference.")
+      (let ((buf (taut-sidebar-open-channel chan-id)))
+        (when (buffer-live-p buf)
+          (let ((win (get-buffer-window buf)))
+            (when win
+              (select-window win))
+            (with-current-buffer buf
+              (let ((pos (point-min))
+                    (found nil))
+                (while (and (not found) (< pos (point-max)))
+                  (let ((next-pos (next-single-property-change pos 'taut-message-ts)))
+                    (if (equal (get-text-property pos 'taut-message-ts) msg-ts)
+                        (progn
+                          (goto-char pos)
+                          (setq found t))
+                      (setq pos (or next-pos (point-max))))))
+                ;; If the message wasn't found in the main channel history (e.g. it is inside a thread reply),
+                ;; and this is a thread reply, open the thread side panel which will fetch and display it!
+                (when (and thread-ts (not (equal thread-ts msg-ts)))
+                  (taut-sidebar-open-thread thread-ts))))))))))
 
 (defun taut-sidebar-open-channel (chan-id)
   "Open conversation buffer for CHAN-ID in the adjacent window."

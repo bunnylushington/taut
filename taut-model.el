@@ -59,7 +59,8 @@
   (reply-count 0) ; Number of replies if this is a thread root
   reactions     ; Alist of (emoji-name . list-of-user-ids)
   is-unread     ; t or nil
-  is-mention)   ; t or nil if current user was mentioned
+  is-mention    ; t or nil if current user was mentioned
+  is-starred)   ; t or nil if starred/bookmarked
 
 (cl-defstruct taut-inbox-item
   "Represents an item in the Gnus-style unified Inbox feed."
@@ -127,6 +128,22 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
 (defun taut-model-get-thread-replies (thread-ts)
   "Get all replies for the thread identified by THREAD-TS."
   (gethash thread-ts taut-threads))
+
+(defun taut-model-get-message-by-ts (ts)
+  "Find a `taut-message' struct with timestamp TS by searching local storage."
+  (let (found)
+    ;; Search channel messages
+    (maphash (lambda (_chan-id msgs)
+               (unless found
+                 (setq found (cl-find ts msgs :key #'taut-message-ts :test #'equal))))
+             taut-messages)
+    ;; If not found, search thread replies
+    (unless found
+      (maphash (lambda (_thread-ts replies)
+                 (unless found
+                   (setq found (cl-find ts replies :key #'taut-message-ts :test #'equal))))
+               taut-threads))
+    found))
 
 (defun taut-model-get-channels-list ()
   "Return a list of all channels, ordered by type and name."
@@ -307,6 +324,24 @@ If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
     (dolist (msg replies)
       (setf (taut-message-is-unread msg) nil))
     (taut-model-trigger-update)))
+
+(defun taut-model-get-starred-messages ()
+  "Get a list of all locally cached `taut-message' structs that are starred."
+  (let (starred)
+    ;; Search channel messages
+    (maphash (lambda (_chan-id msgs)
+               (dolist (msg msgs)
+                 (when (taut-message-is-starred msg)
+                   (push msg starred))))
+             taut-messages)
+    ;; Search thread replies
+    (maphash (lambda (_thread-ts replies)
+               (dolist (msg replies)
+                 (when (taut-message-is-starred msg)
+                   (push msg starred))))
+             taut-threads)
+    ;; Sort by timestamp descending
+    (sort starred (lambda (a b) (string> (or (taut-message-ts a) "") (or (taut-message-ts b) ""))))))
 
 (defun taut-model-clear-all ()
   "Reset all local databases (primarily for tests/re-initialization)."

@@ -44,6 +44,13 @@
   "Face for message timestamps."
   :group 'taut-faces)
 
+(defface taut-message-star
+  '((((background dark))  :foreground "#f1c40f")
+    (((background light)) :foreground "#f39c12")
+    (t                    :foreground "#f1c40f"))
+  "Face for the message star/bookmark indicator."
+  :group 'taut-faces)
+
 (defface taut-message-text
   '((t :inherit font-lock-variable-name-face :weight normal))
   "Face for standard message body text."
@@ -211,6 +218,10 @@
 (define-key taut-message-mode-map (kbd "RET") #'taut-message-start-thread)
 (define-key taut-message-mode-map (kbd "TAB") #'taut-message-toggle-thread-inline)
 (define-key taut-message-mode-map (kbd "a") #'taut-message-add-reaction)
+(define-key taut-message-mode-map (kbd "b") #'taut-message-toggle-star)
+(define-key taut-message-mode-map (kbd "*") #'taut-message-toggle-star)
+(define-key taut-message-mode-map (kbd "n") #'taut-message-next)
+(define-key taut-message-mode-map (kbd "p") #'taut-message-previous)
 (define-key taut-message-mode-map (kbd "g") #'taut-message-refresh)
 (define-key taut-message-mode-map (kbd "q") #'taut-message-bury)
 (define-key taut-message-mode-map (kbd "v") #'taut-message-view-at-point)
@@ -363,7 +374,10 @@ If FETCH-P is non-nil (or when called interactively), fetch latest history from 
          (is-active-thread (and active-thread-ts (equal active-thread-ts (taut-message-ts msg)))))
 
     ;; Header line: Username  [12:34]
-    (insert user-part "  " time-part "\n")
+    (insert user-part "  " time-part)
+    (when (taut-message-is-starred msg)
+      (insert " " (propertize "⭐" 'face 'taut-message-star)))
+    (insert "\n")
     
     ;; Body line: (formatted text body with left indentation)
     (insert "         ")
@@ -439,7 +453,10 @@ ROOT-TS is the timestamp of the parent message."
          (time-part (propertize time-str 'face 'taut-message-timestamp))
          (marker-branch (if is-last "             └─ " "             ├─ "))
          (marker-indent (if is-last "                " "             │  ")))
-    (insert marker-branch user-part "  " time-part "\n")
+    (insert marker-branch user-part "  " time-part)
+    (when (taut-message-is-starred reply)
+      (insert " " (propertize "⭐" 'face 'taut-message-star)))
+    (insert "\n")
     (insert marker-indent)
     (taut-message--insert-formatted-text (taut-message-text reply) marker-indent)
     (insert "\n")
@@ -783,6 +800,87 @@ ROOT-TS is the timestamp of the parent message."
                     (setf (taut-message-reactions msg)
                           (append reactions (list (cons emoji (list taut-current-user-id))))))))))
           (taut-message-refresh))))))
+
+(defun taut-message-toggle-star ()
+  "Star or unstar (bookmark) the message under the cursor."
+  (interactive)
+  (let ((ts (get-text-property (point) 'taut-message-ts)))
+    (if (null ts)
+        (message "No message under point to bookmark.")
+      (let ((msg (taut-model-get-message-by-ts ts)))
+        (if (null msg)
+            (message "Could not locate message metadata for bookmarking.")
+          (let* ((chan-id (taut-message-channel-id msg))
+                 (currently-starred (taut-message-is-starred msg))
+                 (new-state (not currently-starred)))
+            (if (and (boundp 'taut-bot-token) taut-bot-token)
+                ;; Online logic
+                (condition-case err
+                    (progn
+                      (if new-state
+                          (taut-api-star-add chan-id ts)
+                        (taut-api-star-remove chan-id ts))
+                      (setf (taut-message-is-starred msg) new-state)
+                      (taut-model-trigger-update)
+                      (message "Taut: %s message." (if new-state "Bookmarked" "Unbookmarked")))
+                  (error
+                   (message "Taut: Bookmark action failed: %s" (error-message-string err))))
+              ;; Offline / Fallback logic
+              (setf (taut-message-is-starred msg) new-state)
+              (taut-model-trigger-update)
+              (message "Taut (offline): %s message." (if new-state "Bookmarked" "Unbookmarked")))))))))
+
+(defun taut-message--start-of-message (pos)
+  "Find the start position of the message block containing POS."
+  (let ((ts (get-text-property pos 'taut-message-ts)))
+    (if (not ts)
+        pos
+      (let ((change (previous-single-property-change pos 'taut-message-ts)))
+        (if change (1+ change) (point-min))))))
+
+(defun taut-message-next ()
+  "Move point to the start of the next message."
+  (interactive)
+  (let ((current-ts (get-text-property (point) 'taut-message-ts))
+        (pos (point))
+        (found nil))
+    (if current-ts
+        (let ((change (next-single-property-change pos 'taut-message-ts)))
+          (if change
+              (setq pos change)
+            (setq pos (point-max)))) )
+    (while (and (< pos (point-max)) (not found))
+      (if (get-text-property pos 'taut-message-ts)
+          (setq found t)
+        (let ((next-change (next-single-property-change pos 'taut-message-ts)))
+          (if next-change
+              (setq pos next-change)
+            (setq pos (point-max))))))
+    (if found
+        (goto-char pos)
+      (goto-char (point-max))
+      (message "End of messages."))))
+
+(defun taut-message-previous ()
+  "Move point to the start of the previous message."
+  (interactive)
+  (let* ((pos (point))
+         (current-start (taut-message--start-of-message pos)))
+    (if (< current-start pos)
+        (goto-char current-start)
+      (let ((search-pos (1- current-start))
+            (found nil))
+        (while (and (>= search-pos (point-min)) (not found))
+          (if (get-text-property search-pos 'taut-message-ts)
+              (setq found t)
+            (let ((prev-change (previous-single-property-change search-pos 'taut-message-ts)))
+              (if prev-change
+                  (setq search-pos prev-change)
+                (setq search-pos (1- (point-min)))))))
+        (if found
+            (goto-char (taut-message--start-of-message search-pos))
+          (goto-char (point-min))
+          (message "Beginning of messages."))))))
 
 (defun taut-message-bury ()
   "Bury the current conversation buffer."

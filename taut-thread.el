@@ -40,6 +40,10 @@
 
 (define-key taut-thread-mode-map (kbd "r") #'taut-message-reply-normal)
 (define-key taut-thread-mode-map (kbd "R") #'taut-message-reply-quote)
+(define-key taut-thread-mode-map (kbd "b") #'taut-message-toggle-star)
+(define-key taut-thread-mode-map (kbd "*") #'taut-message-toggle-star)
+(define-key taut-thread-mode-map (kbd "n") #'taut-message-next)
+(define-key taut-thread-mode-map (kbd "p") #'taut-message-previous)
 (define-key taut-thread-mode-map (kbd "g") #'taut-thread-refresh)
 (define-key taut-thread-mode-map (kbd "q") #'taut-thread-close)
 (define-key taut-thread-mode-map (kbd "v") #'taut-message-view-at-point)
