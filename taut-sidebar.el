@@ -14,6 +14,8 @@
 
 (require 'taut-model)
 
+(declare-function taut-dispatch "taut-transient")
+
 ;;;; Faces
 
 (defface taut-sidebar-header
@@ -79,6 +81,7 @@
     (define-key map (kbd "g") #'taut-sidebar-refresh)
     (define-key map (kbd "TAB") #'taut-sidebar-toggle-section-at-point)
     (define-key map (kbd "q") #'taut-sidebar-bury)
+    (define-key map (kbd "?") #'taut-dispatch)
     map)
   "Keymap for `taut-sidebar-mode`.")
 

@@ -15,6 +15,8 @@
 (require 'taut-model)
 (require 'taut-api)
 
+(declare-function taut-dispatch "taut-transient")
+
 ;;;; Faces
 
 (defface taut-message-username
@@ -105,6 +107,7 @@
     (define-key map (kbd "a") #'taut-message-add-reaction)
     (define-key map (kbd "g") #'taut-message-refresh)
     (define-key map (kbd "q") #'taut-message-bury)
+    (define-key map (kbd "?") #'taut-dispatch)
     map)
   "Keymap for `taut-message-mode`.")
 

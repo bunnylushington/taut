@@ -32,6 +32,7 @@
 (require 'taut-thread)
 (require 'taut-api)
 (require 'taut-socket)
+(require 'taut-transient)
 
 ;;;; Global Minor Mode / Initialization Commands
 

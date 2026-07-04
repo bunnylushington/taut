@@ -14,6 +14,8 @@
 
 (require 'taut-model)
 
+(declare-function taut-dispatch "taut-transient")
+
 ;;;; Faces
 
 (defface taut-inbox-unread-star
@@ -61,6 +63,7 @@
     (define-key map (kbd "e") #'taut-inbox-mark-read) ; Alternative archive/dismiss key
     (define-key map (kbd "g") #'taut-inbox-refresh)
     (define-key map (kbd "q") #'taut-inbox-bury)
+    (define-key map (kbd "?") #'taut-dispatch)
     map)
   "Keymap for `taut-inbox-mode`.")
 

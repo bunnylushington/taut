@@ -16,6 +16,8 @@
 (require 'taut-message)
 (require 'taut-api)
 
+(declare-function taut-dispatch "taut-transient")
+
 ;;;; Faces
 
 (defface taut-thread-root-header
@@ -35,6 +37,7 @@
     (define-key map (kbd "r") #'taut-thread-send)
     (define-key map (kbd "g") #'taut-thread-refresh)
     (define-key map (kbd "q") #'taut-thread-close)
+    (define-key map (kbd "?") #'taut-dispatch)
     map)
   "Keymap for `taut-thread-mode`.")
 
