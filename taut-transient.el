@@ -18,6 +18,7 @@
 
 ;; Forward declarations for byte-compiler peace of mind
 (declare-function taut-connect "taut")
+(declare-function taut-dm-open "taut")
 (declare-function taut-sidebar-show "taut-sidebar")
 (declare-function taut-sidebar-bury "taut-sidebar")
 (declare-function taut-inbox-show "taut-inbox")
@@ -35,6 +36,7 @@
   ["💬 Taut: Premium Slack Client"
    ["Workspace & Navigation"
     ("c" "Connect to Slack"    taut-connect)
+    ("d" "Direct Message (User)" taut-dm-open)
     ("s" "Show/Focus Sidebar"  taut-sidebar-show)
     ("i" "Show/Focus Inbox"    taut-inbox-show)
     ("q" "Quit / Bury Pane"    quit-window)]

@@ -209,5 +209,48 @@ into Taut to show the unread counters and Inbox updating in real time."
                  (let ((chan (taut-model-get-channel chan-id)))
                    (if chan (taut-channel-name chan) "unknown")))))))
 
+;;;###autoload
+(defun taut-dm-open ()
+  "Start or open a direct message conversation with a workspace user."
+  (interactive)
+  (let (users-list)
+    (maphash (lambda (_id user)
+               (unless (taut-user-is-me user)
+                 (push (cons (format "%s (%s)" (taut-user-username user) (taut-user-real-name user))
+                             user)
+                       users-list)))
+             taut-users)
+    (if (null users-list)
+        (message "Taut: No other workspace users found.")
+      (let* ((sorted-choices (sort (mapcar #'car users-list) #'string<))
+             (choice (completing-read "Direct Message with User: " sorted-choices nil t))
+             (user (cdr (assoc choice users-list))))
+        (when user
+          (let ((user-id (taut-user-id user))
+                (username (taut-user-username user)))
+            (message "Opening direct message with @%s..." username)
+            (condition-case err
+                (let ((chan-id
+                       (if (and (boundp 'taut-bot-token) taut-bot-token)
+                           ;; Online mode: Open DM via Slack API
+                           (taut-api-open-dm user-id)
+                         ;; Offline/Mock mode: Find or create mock DM channel
+                         (let* ((mock-id (concat "C_" (upcase username) "_DM"))
+                                (existing (taut-model-get-channel mock-id)))
+                           (unless existing
+                             (taut-model-add-channel
+                              (make-taut-channel
+                               :id mock-id
+                               :name username
+                               :type 'dm
+                               :unread-count 0
+                               :mention-count 0)))
+                           mock-id))))
+                  ;; Open the message conversation buffer for the DM channel
+                  (taut-message-open chan-id)
+                  (message "Opened DM with @%s!" username))
+              (error
+               (message "Error opening DM: %s" (error-message-string err))))))))))
+
 (provide 'taut)
 ;;; taut.el ends here

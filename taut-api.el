@@ -309,5 +309,27 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                    (name . ,emoji-clean))))
     (taut-api--request "reactions.add" params "POST")))
 
+(defun taut-api-open-dm (user-id)
+  "Open or create a direct message channel with USER-ID."
+  (let* ((params `((users . ,user-id)))
+         (res (taut-api--request "conversations.open" params "POST"))
+         (channel (cdr (assoc 'channel res))))
+    (if (and (cdr (assoc 'ok res)) channel)
+        (let* ((id (cdr (assoc 'id channel)))
+               (user (taut-model-get-user user-id))
+               (username (taut-user-username user))
+               (existing (taut-model-get-channel id)))
+          (unless existing
+            (taut-model-add-channel
+             (make-taut-channel
+              :id id
+              :name username
+              :type 'dm
+              :unread-count 0
+              :mention-count 0)))
+          id)
+      (error "Taut API Error: Failed to open DM with %s: %s"
+             user-id (cdr (assoc 'error res))))))
+
 (provide 'taut-api)
 ;;; taut-api.el ends here
