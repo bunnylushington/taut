@@ -33,13 +33,13 @@
 (require 'taut-api)
 (require 'taut-socket)
 (require 'taut-transient)
+(require 'taut-compose)
 
 ;;;; Global Minor Mode / Initialization Commands
 
 ;;;###autoload
-(defun taut ()
-  "Start Taut Slack client with a beautiful sidebar-and-inbox layout.
-Initializes the system with sample conversations and opens the workspace."
+(defun taut-mock ()
+  "Start Taut Slack client in offline/mock mode with sample conversations."
   (interactive)
   (taut-initialize-mock-data)
   ;; Split and display layout
@@ -47,6 +47,9 @@ Initializes the system with sample conversations and opens the workspace."
   (taut-sidebar-show)
   (taut-inbox-show)
   (message "Welcome to Taut! Sidebar and Inbox loaded. Start simulation with M-x taut-mock-start."))
+
+;;;###autoload
+(defalias 'taut #'taut-connect)
 
 ;;;###autoload
 (defun taut-connect ()
@@ -90,6 +93,40 @@ Initializes the system with sample conversations and opens the workspace."
   "Toggle or focus the Taut Sidebar."
   (interactive)
   (taut-sidebar-show))
+
+;;;###autoload
+(defun taut-quit ()
+  "Hard quit Taut: stop simulators, close WebSocket, kill buffers, and restore windows."
+  (interactive)
+  ;; 1. Stop background simulation
+  (when (fboundp 'taut-mock-stop)
+    (taut-mock-stop))
+  
+  ;; 2. Disconnect WebSocket
+  (when (fboundp 'taut-socket-disconnect)
+    (taut-socket-disconnect))
+  
+  ;; 3. Identify and collect all Taut buffers
+  (let ((taut-modes '(taut-sidebar-mode taut-inbox-mode taut-message-mode taut-thread-mode))
+        (buffers-to-kill nil))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (memq major-mode taut-modes)
+          (push buf buffers-to-kill))))
+    
+    ;; 4. Close windows showing Taut buffers, or switch to *scratch* if single window
+    (dolist (win (window-list))
+      (let ((buf (window-buffer win)))
+        (when (memq (buffer-local-value 'major-mode buf) taut-modes)
+          (if (one-window-p)
+              (set-window-buffer win (get-buffer-create "*scratch*"))
+            (ignore-errors (delete-window win))))))
+    
+    ;; 5. Kill all identified Taut buffers
+    (dolist (buf buffers-to-kill)
+      (kill-buffer buf))
+    
+    (message "Taut: Hard quit complete.")))
 
 ;;;###autoload
 (defun taut-reload ()

@@ -19,17 +19,23 @@
 ;;;; Faces
 
 (defface taut-sidebar-header
-  '((t :inherit font-lock-keyword-face :weight bold :height 1.05))
+  '((((background dark))  :foreground "#a0aec0" :weight bold :height 0.9)
+    (((background light)) :foreground "#555555" :weight bold :height 0.9)
+    (t                    :foreground "#555555" :weight bold :height 0.9))
   "Face for sidebar section headers."
   :group 'taut-faces)
 
 (defface taut-sidebar-channel
-  '((t :inherit font-lock-string-face :weight normal))
+  '((((background dark))  :foreground "#cbd5e0" :weight normal)
+    (((background light)) :foreground "#1d1c1d" :weight normal)
+    (t                    :foreground "#1d1c1d" :weight normal))
   "Face for standard channels in the sidebar."
   :group 'taut-faces)
 
 (defface taut-sidebar-channel-unread
-  '((t :inherit font-lock-warning-face :weight bold))
+  '((((background dark))  :foreground "#ffffff" :weight bold)
+    (((background light)) :foreground "#1264a3" :weight bold)
+    (t                    :foreground "#1264a3" :weight bold))
   "Face for channels with unread messages in the sidebar."
   :group 'taut-faces)
 
@@ -39,7 +45,9 @@
   :group 'taut-faces)
 
 (defface taut-sidebar-badge-unread
-  '((t :inherit font-lock-comment-face :weight bold))
+  '((((background dark))  :foreground "#a0aec0" :weight bold)
+    (((background light)) :foreground "#555555" :weight bold)
+    (t                    :foreground "#555555" :weight bold))
   "Face for simple unread counts in the sidebar."
   :group 'taut-faces)
 
@@ -60,7 +68,7 @@
 
 ;;;; Configuration & State
 
-(defcustom taut-sidebar-width 60
+(defcustom taut-sidebar-width 30
   "Default width of the Taut sidebar."
   :type 'integer
   :group 'taut)
@@ -97,10 +105,10 @@
 ;;;; Rendering Engine
 
 (defun taut-sidebar-refresh ()
-  "Redraw the sidebar buffer contents if it exists and is visible."
+  "Redraw the sidebar buffer contents if it exists."
   (interactive)
   (let ((buf (get-buffer "*Taut Sidebar*")))
-    (when (and buf (get-buffer-window buf))
+    (when (buffer-live-p buf)
       (with-current-buffer buf
         (let ((inhibit-read-only t)
               (old-point (point)))
@@ -152,20 +160,21 @@
   (let* ((has-unreads (> (taut-channel-unread-count chan) 0))
          (has-mentions (> (taut-channel-mention-count chan) 0))
          (channel-face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))
+         (chan-name (or (taut-channel-name chan) "unknown"))
          (name-prefix (if (eq (taut-channel-type chan) 'dm)
-                          (let ((user (taut-model-get-user (taut-channel-id chan))))
+                          (let ((user (taut-model-get-user-by-username chan-name)))
                             (taut-sidebar--user-status-indicator user))
                         "# "))
          (chan-line-start (point)))
     
     (insert "  " name-prefix)
-    (insert (propertize (taut-channel-name chan) 'face channel-face))
+    (insert (propertize chan-name 'face channel-face))
     
     ;; Append Badge if there are unreads/mentions
     (cond
      (has-mentions
-      (insert (propertize (format " %d " (taut-channel-mention-count chan))
-                          'face 'taut-sidebar-badge-mention)))
+       (insert (propertize (format " %d " (taut-channel-mention-count chan))
+                           'face 'taut-sidebar-badge-mention)))
      (has-unreads
       (insert (propertize (format " (%d)" (taut-channel-unread-count chan))
                           'face 'taut-sidebar-badge-unread))))
@@ -195,8 +204,9 @@
                  (has-unreads (> unread-reply-count 0))
                  (line-start (point)))
             (insert "  " (if has-unreads "● " "  "))
-            (insert (propertize (format "Thread %s" (substring th-ts -5))
-                                'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel)))
+            (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
+              (insert (propertize (format "Thread %s" ts-suffix)
+                                  'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))))
             (when has-unreads
               (insert (propertize (format " (%d)" unread-reply-count)
                                   'face 'taut-sidebar-badge-unread)))
@@ -208,7 +218,7 @@
 
 (defun taut-sidebar--user-status-indicator (user)
   "Return a stylized string indicating USER's status."
-  (let ((presence (taut-user-presence user)))
+  (let ((presence (and user (taut-user-presence user))))
     (cond
      ((eq presence 'online)  (propertize "● " 'face 'taut-sidebar-status-online))
      ((eq presence 'away)    (propertize "○ " 'face 'taut-sidebar-status-away))
@@ -274,10 +284,19 @@
     
     ;; Split frame to display sidebar on the left
     (let ((window (get-buffer-window buf)))
-      (unless window
+      (if window
+          ;; Ensure already open sidebar has the correct width
+          (let ((delta (- taut-sidebar-width (window-total-width window))))
+            (when (/= delta 0)
+              (ignore-errors
+                (window-resize window delta t))))
         (let ((left-window (split-window (frame-root-window) taut-sidebar-width 'left)))
           (set-window-buffer left-window buf)
           (set-window-dedicated-p left-window t)
+          (let ((delta (- taut-sidebar-width (window-total-width left-window))))
+            (when (/= delta 0)
+              (ignore-errors
+                (window-resize left-window delta t))))
           (setq window left-window)))
       (taut-sidebar-refresh)
       window)))

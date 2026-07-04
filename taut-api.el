@@ -104,10 +104,10 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                              (json-read)
                            (error nil))))
               (if (null res)
-                   (error "Taut: Failed to parse Slack JSON response")
-                 (if (cdr (assoc 'ok res))
-                     res
-                   (error "Slack API Error (%s): %s" endpoint (cdr (assoc 'error res))))))))))))
+                  (error "Taut: Failed to parse Slack JSON response")
+                (if (cdr (assoc 'ok res))
+                    res
+                  (error "Slack API Error (%s): %s" endpoint (or (cdr (assoc 'error res)) "unknown error")))))))))))
 
 ;;;; High-level API Integration Wrappers
 
@@ -153,12 +153,14 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
              (is-private (cdr (assoc 'is_private c)))
              (unread-count (or (cdr (assoc 'unread_count c)) 0))
              ;; Map name nicely
-             (name (cond
-                    (is-im
-                     (let* ((uid (cdr (assoc 'user c)))
-                            (user (taut-model-get-user uid)))
-                       (if user (taut-user-username user) (concat "user-" uid))))
-                    (t (cdr (assoc 'name c)))))
+             (name (or (cond
+                        (is-im
+                         (let* ((uid (cdr (assoc 'user c)))
+                                (user (taut-model-get-user uid)))
+                           (or (and user (taut-user-username user)) (concat "user-" (or uid "unknown")))))
+                        (t (cdr (assoc 'name c))))
+                       id
+                       "unknown"))
              (type (cond
                     (is-im 'dm)
                     (is-private 'private)
@@ -203,52 +205,66 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
     (error
      (message "Taut: Starred sync failed: %s" (error-message-string err)))))
 
+(defun taut-api-unescape-html (text)
+  "Replace common HTML entities in TEXT with their literal characters."
+  (if text
+      (let ((s text))
+        (setq s (replace-regexp-in-string "&lt;" "<" s t t))
+        (setq s (replace-regexp-in-string "&gt;" ">" s t t))
+        (setq s (replace-regexp-in-string "&amp;" "&" s t t))
+        s)
+    ""))
+
 (defun taut-api-fetch-history (channel-id &optional limit)
   "Fetch recent history for CHANNEL-ID, translating and loading into state."
   (let* ((params `((channel . ,channel-id)
                    (limit . ,(or limit 40))))
-         (res (condition-case err
-                  (taut-api--request "conversations.history" params "POST")
-                (error
-                 (if (string-match-p "not_in_channel" (error-message-string err))
-                     (progn
-                       (message "Taut: Joining channel %s..." channel-id)
-                       (taut-api--request "conversations.join" `((channel . ,channel-id)) "POST")
-                       (taut-api--request "conversations.history" params "POST"))
-                   (signal (car err) (cdr err))))))
+          (res (condition-case err
+                   (taut-api--request "conversations.history" params "POST")
+                 (error
+                  (if (string-match-p "not_in_channel" (error-message-string err))
+                      (progn
+                        (message "Taut: Joining channel %s..." channel-id)
+                        (taut-api--request "conversations.join" `((channel . ,channel-id)) "POST")
+                        (taut-api--request "conversations.history" params "POST"))
+                    (signal (car err) (cdr err))))))
          (messages (cdr (assoc 'messages res))))
     (setf (gethash channel-id taut-messages) nil)
     (dolist (m (nreverse messages))
       (let* ((ts (cdr (assoc 'ts m)))
              (subtype (cdr (assoc 'subtype m)))
-             (user-id (cdr (assoc 'user m))))
-        ;; Skip system join/leave messages for visual cleanliness
-        (unless (or subtype (null user-id))
-          (let* ((text (cdr (assoc 'text m)))
-                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
-                 (thread-ts (cdr (assoc 'thread_ts m)))
-                 (reply-count (cdr (assoc 'reply_count m)))
-                 (reactions (cdr (assoc 'reactions m)))
-                 ;; Convert reactions list to taut model representation
-                 (model-reactions nil))
-            (dolist (r reactions)
-              (push (cons (concat ":" (cdr (assoc 'name r)) ":")
-                          (cdr (assoc 'users r)))
-                    model-reactions))
-            
-            (taut-model-add-message
-             (make-taut-message
-              :id (concat "msg_" ts)
-              :channel-id channel-id
-              :user-id user-id
-              :text text
-              :ts ts
-              :thread-ts thread-ts
-              :reply-count (or reply-count 0)
-              :reactions model-reactions
-              :is-unread nil
-              :is-mention is-mention))))))
-    (run-hooks 'taut-model-updated-hook)))
+             (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown")))
+        ;; Skip system join/leave messages for visual cleanliness and verify TS is present
+        (when ts
+          (unless (member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))
+            (let* ((raw-text (or (cdr (assoc 'text m)) ""))
+                   (text (taut-api-unescape-html raw-text))
+                   (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
+                   (thread-ts (cdr (assoc 'thread_ts m)))
+                   (reply-count (cdr (assoc 'reply_count m)))
+                   (reactions (cdr (assoc 'reactions m)))
+                   ;; Convert reactions list to taut model representation
+                   (model-reactions nil))
+              (dolist (r reactions)
+                (let ((r-name (cdr (assoc 'name r))))
+                  (when r-name
+                    (push (cons (concat ":" r-name ":")
+                                (cdr (assoc 'users r)))
+                          model-reactions))))
+              
+              (taut-model-add-message
+               (make-taut-message
+                :id (concat "msg_" ts)
+                :channel-id channel-id
+                :user-id user-id
+                :text text
+                :ts ts
+                :thread-ts thread-ts
+                :reply-count (or reply-count 0)
+                :reactions model-reactions
+                :is-unread nil
+                :is-mention is-mention)))))))
+    (taut-model-trigger-update)))
 
 (defun taut-api-fetch-replies (channel-id thread-ts)
   "Fetch all thread replies for THREAD-TS in CHANNEL-ID."
@@ -256,26 +272,35 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                    (ts . ,thread-ts)))
          (res (taut-api--request "conversations.replies" params "GET"))
          (messages (cdr (assoc 'messages res))))
+    ;; Update root message's reply count from server's root message metadata
+    (let* ((root-msg-data (car messages))
+           (reply-count (cdr (assoc 'reply_count root-msg-data)))
+           (root-chan-msgs (gethash channel-id taut-messages))
+           (root-msg (cl-find thread-ts root-chan-msgs :key #'taut-message-ts :test #'equal)))
+      (when (and root-msg reply-count)
+        (setf (taut-message-reply-count root-msg) reply-count)))
     ;; Reset old thread cache
     (setf (gethash thread-ts taut-threads) nil)
     ;; Skip the first message as it is the root message (already in channels history)
     (dolist (m (cdr messages))
       (let* ((ts (cdr (assoc 'ts m)))
-             (user-id (cdr (assoc 'user m)))
-             (text (cdr (assoc 'text m)))
+             (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown"))
+             (text (taut-api-unescape-html (or (cdr (assoc 'text m)) "")))
              (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
-        (taut-model-add-message
-         (make-taut-message
-          :id (concat "msg_" ts)
-          :channel-id channel-id
-          :user-id user-id
-          :text text
-          :ts ts
-          :thread-ts thread-ts
-          :reply-count 0
-          :is-unread nil
-          :is-mention is-mention))))
-    (run-hooks 'taut-model-updated-hook)))
+        (when ts
+          (taut-model-add-message
+           (make-taut-message
+            :id (concat "msg_" ts)
+            :channel-id channel-id
+            :user-id user-id
+            :text text
+            :ts ts
+            :thread-ts thread-ts
+            :reply-count 0
+            :is-unread nil
+            :is-mention is-mention)
+           t))))
+    (taut-model-trigger-update)))
 
 (defun taut-api-post-message (channel-id text &optional thread-ts)
   "Send a message TEXT to CHANNEL-ID. Option THREAD-TS to post as thread reply."
@@ -284,7 +309,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
          (params (if thread-ts (append params `((thread_ts . ,thread-ts))) params))
          (res (taut-api--request "chat.postMessage" params "POST"))
          (m (cdr (assoc 'message res)))
-         (ts (cdr (assoc 'ts m))))
+         (ts (or (cdr (assoc 'ts m)) (cdr (assoc 'ts res)) (format "%d.0000" (time-convert nil 'integer)))))
     ;; Inject our sent message directly into state for instant responsiveness
     (taut-model-add-message
      (make-taut-message
@@ -301,7 +326,8 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
 (defun taut-api-add-reaction (channel-id timestamp emoji)
   "Add EMOJI reaction to message at TIMESTAMP in CHANNEL-ID."
   ;; Remove bounding colons if present (e.g. ":thumbsup:" -> "thumbsup")
-  (let* ((emoji-clean (if (string-match "^:\\(.*\\):$" emoji)
+  (let* ((emoji (or emoji ""))
+         (emoji-clean (if (string-match "^:\\(.*\\):$" emoji)
                           (match-string 1 emoji)
                         emoji))
          (params `((channel . ,channel-id)
@@ -311,13 +337,15 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
 
 (defun taut-api-open-dm (user-id)
   "Open or create a direct message channel with USER-ID."
-  (let* ((params `((users . ,user-id)))
+  (let* ((user-id (or user-id "unknown"))
+         (params `((users . ,user-id)))
          (res (taut-api--request "conversations.open" params "POST"))
          (channel (cdr (assoc 'channel res))))
     (if (and (cdr (assoc 'ok res)) channel)
         (let* ((id (cdr (assoc 'id channel)))
                (user (taut-model-get-user user-id))
-               (username (taut-user-username user))
+               (username (or (and user (taut-user-username user)) (concat "user-" user-id)))
+               (id (or id (concat "DM_FALLBACK_" user-id)))
                (existing (taut-model-get-channel id)))
           (unless existing
             (taut-model-add-channel
@@ -329,7 +357,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
               :mention-count 0)))
           id)
       (error "Taut API Error: Failed to open DM with %s: %s"
-             user-id (cdr (assoc 'error res))))))
+             user-id (or (cdr (assoc 'error res)) "unknown error")))))
 
 (provide 'taut-api)
 ;;; taut-api.el ends here

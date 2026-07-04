@@ -107,6 +107,15 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
   (or (gethash user-id taut-users)
       (make-taut-user :id user-id :username (format "user-%s" user-id) :real-name "Unknown User" :presence 'offline)))
 
+(defun taut-model-get-user-by-username (username)
+  "Find a `taut-user` by USERNAME. Returns nil if not found."
+  (let (found)
+    (maphash (lambda (_id user)
+               (when (equal (taut-user-username user) username)
+                 (setq found user)))
+             taut-users)
+    found))
+
 (defun taut-model-get-channel (channel-id)
   "Retrieve the `taut-channel` for CHANNEL-ID."
   (gethash channel-id taut-channels))
@@ -129,7 +138,7 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
                   (star-b (taut-channel-is-starred b)))
               (if (not (eq star-a star-b))
                   star-a
-                (string< (taut-channel-name a) (taut-channel-name b))))))))
+                (string< (or (taut-channel-name a) "") (or (taut-channel-name b) ""))))))))
 
 ;;;; Derive Gnus-Style Inbox Items
 
@@ -157,7 +166,7 @@ Unified Inbox contains:
                       :channel-id chan-id
                       :message-id (taut-message-id msg)
                       :user-id (taut-message-user-id msg)
-                      :title (format "DM: @%s" (taut-channel-name chan))
+                      :title (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
                       :snippet (taut-message-text msg)
                       :ts (taut-message-ts msg)
                       :is-read nil)
@@ -171,7 +180,7 @@ Unified Inbox contains:
                       :channel-id chan-id
                       :message-id (taut-message-id msg)
                       :user-id (taut-message-user-id msg)
-                      :title (format "#%s" (taut-channel-name chan))
+                      :title (format "#%s" (or (taut-channel-name chan) "unknown"))
                       :snippet (taut-message-text msg)
                       :ts (taut-message-ts msg)
                       :is-read nil)
@@ -188,7 +197,7 @@ Unified Inbox contains:
           ;; Find root message to get channel info and snippet
           (let* ((chan-id (taut-message-channel-id last-reply))
                  (chan (taut-model-get-channel chan-id))
-                 (chan-name (if chan (taut-channel-name chan) "unknown"))
+                 (chan-name (if chan (or (taut-channel-name chan) "unknown") "unknown"))
                  (is-dm (and chan (eq (taut-channel-type chan) 'dm))))
             (push (make-taut-inbox-item
                    :id th-ts
@@ -204,59 +213,82 @@ Unified Inbox contains:
                   items)))))
 
     ;; Sort items descending by timestamp so most recent is on top
-    (sort items (lambda (a b) (string> (taut-inbox-item-ts a) (taut-inbox-item-ts b))))))
+    (sort items (lambda (a b) (string> (or (taut-inbox-item-ts a) "") (or (taut-inbox-item-ts b) ""))))))
 
 ;;;; Mutation & Operations Layer
+
+(defvar taut-model--update-timer nil
+  "Timer used to debounce model update hook execution.")
+
+(defun taut-model-trigger-update ()
+  "Schedule `taut-model-updated-hook` to run safely in the main event loop.
+Debounces multiple rapid model changes."
+  (unless taut-model--update-timer
+    (setq taut-model--update-timer
+          (run-at-time 0.01 nil
+                       (lambda ()
+                         (setq taut-model--update-timer nil)
+                         (run-hooks 'taut-model-updated-hook))))))
 
 (defun taut-model-add-user (user)
   "Register USER in the global database."
   (setf (gethash (taut-user-id user) taut-users) user)
-  (run-hooks 'taut-model-updated-hook))
+  (taut-model-trigger-update))
 
 (defun taut-model-add-channel (chan)
   "Register channel CHAN in the global database."
   (setf (gethash (taut-channel-id chan) taut-channels) chan)
-  (run-hooks 'taut-model-updated-hook))
+  (taut-model-trigger-update))
 
-(defun taut-model-add-message (msg)
-  "Insert message MSG into storage, managing unreads and notifications."
+(defun taut-model-add-message (msg &optional no-inc-reply-p)
+  "Insert message MSG into storage, managing unreads and notifications.
+Avoid inserting duplicate messages based on timestamp TS.
+If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
   (let* ((chan-id (taut-message-channel-id msg))
          (chan (taut-model-get-channel chan-id))
-         (thread-ts (taut-message-thread-ts msg)))
+         (thread-ts (taut-message-thread-ts msg))
+         (msg-ts (taut-message-ts msg))
+         (is-duplicate nil))
 
     ;; Check if it's a thread reply or main channel message
-    (if (and thread-ts (not (equal thread-ts (taut-message-ts msg))))
+    (if (and thread-ts (not (equal thread-ts msg-ts)))
         ;; Thread reply
         (let ((replies (gethash thread-ts taut-threads)))
-          (setf (gethash thread-ts taut-threads) (append replies (list msg)))
-          ;; Increment root reply-count if root exists
-          (let* ((root-chan-msgs (gethash chan-id taut-messages))
-                 (root-msg (cl-find thread-ts root-chan-msgs :key #'taut-message-ts :test #'equal)))
-            (when root-msg
-              (unless (taut-message-reply-count root-msg)
-                (setf (taut-message-reply-count root-msg) 0))
-              (cl-incf (taut-message-reply-count root-msg))))
-          ;; If I sent a message in this thread, or if it's my thread, watch it
-          (let ((is-my-msg (equal (taut-message-user-id msg) taut-current-user-id)))
-            (when (and is-my-msg (not (member thread-ts taut-watched-threads)))
-              (push thread-ts taut-watched-threads))))
+          (if (cl-some (lambda (m) (equal (taut-message-ts m) msg-ts)) replies)
+              (setq is-duplicate t)
+            (setf (gethash thread-ts taut-threads) (append replies (list msg)))
+            ;; Increment root reply-count if root exists
+            (unless no-inc-reply-p
+              (let* ((root-chan-msgs (gethash chan-id taut-messages))
+                     (root-msg (cl-find thread-ts root-chan-msgs :key #'taut-message-ts :test #'equal)))
+                (when root-msg
+                  (unless (taut-message-reply-count root-msg)
+                    (setf (taut-message-reply-count root-msg) 0))
+                  (cl-incf (taut-message-reply-count root-msg)))))
+            ;; If I sent a message in this thread, or if it's my thread, watch it
+            (let ((is-my-msg (equal (taut-message-user-id msg) taut-current-user-id)))
+              (when (and is-my-msg (not (member thread-ts taut-watched-threads)))
+                (push thread-ts taut-watched-threads)))))
       
       ;; Main channel message
       (let ((msgs (gethash chan-id taut-messages)))
-        (setf (gethash chan-id taut-messages) (append msgs (list msg)))))
+        (if (cl-some (lambda (m) (equal (taut-message-ts m) msg-ts)) msgs)
+            (setq is-duplicate t)
+          (setf (gethash chan-id taut-messages) (append msgs (list msg))))))
 
-    ;; Update channel unread/mention statistics
-    (when (and chan (not (equal (taut-message-user-id msg) taut-current-user-id)))
-      (when (taut-message-is-unread msg)
-        (unless (taut-channel-unread-count chan)
-          (setf (taut-channel-unread-count chan) 0))
-        (cl-incf (taut-channel-unread-count chan))
-        (when (taut-message-is-mention msg)
-          (unless (taut-channel-mention-count chan)
-            (setf (taut-channel-mention-count chan) 0))
-          (cl-incf (taut-channel-mention-count chan)))))
+    ;; Update channel unread/mention statistics (only if not a duplicate)
+    (unless is-duplicate
+      (when (and chan (not (equal (taut-message-user-id msg) taut-current-user-id)))
+        (when (taut-message-is-unread msg)
+          (unless (taut-channel-unread-count chan)
+            (setf (taut-channel-unread-count chan) 0))
+          (cl-incf (taut-channel-unread-count chan))
+          (when (taut-message-is-mention msg)
+            (unless (taut-channel-mention-count chan)
+              (setf (taut-channel-mention-count chan) 0))
+            (cl-incf (taut-channel-mention-count chan)))))
 
-    (run-hooks 'taut-model-updated-hook)))
+      (taut-model-trigger-update))))
 
 (defun taut-model-mark-channel-read (channel-id)
   "Mark all messages in channel CHANNEL-ID as read."
@@ -267,14 +299,14 @@ Unified Inbox contains:
       (setf (taut-channel-mention-count chan) 0))
     (dolist (msg msgs)
       (setf (taut-message-is-unread msg) nil))
-    (run-hooks 'taut-model-updated-hook)))
+    (taut-model-trigger-update)))
 
 (defun taut-model-mark-thread-read (thread-ts)
   "Mark all replies in thread THREAD-TS as read."
   (let ((replies (gethash thread-ts taut-threads)))
     (dolist (msg replies)
       (setf (taut-message-is-unread msg) nil))
-    (run-hooks 'taut-model-updated-hook)))
+    (taut-model-trigger-update)))
 
 (defun taut-model-clear-all ()
   "Reset all local databases (primarily for tests/re-initialization)."
@@ -283,7 +315,7 @@ Unified Inbox contains:
   (clrhash taut-messages)
   (clrhash taut-threads)
   (setq taut-watched-threads nil)
-  (run-hooks 'taut-model-updated-hook))
+  (taut-model-trigger-update))
 
 (provide 'taut-model)
 ;;; taut-model.el ends here

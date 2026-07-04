@@ -129,12 +129,12 @@
                       ((eq type 'mention)        (propertize " MENTION" 'face 'taut-inbox-type-mention))
                       ((eq type 'thread-update)  (propertize " THREAD " 'face 'taut-inbox-type-thread))))
          ;; Title (Channel or sender)
-         (title-part (propertize (taut-inbox-item-title item) 'face 'taut-inbox-title))
+         (title-part (propertize (or (taut-inbox-item-title item) "unknown") 'face 'taut-inbox-title))
          ;; Sender user name
          (sender (taut-model-get-user (taut-inbox-item-user-id item)))
-         (sender-name (format "@%s" (taut-user-username sender)))
+         (sender-name (format "@%s" (if sender (or (taut-user-username sender) "unknown") "unknown")))
          ;; Excerpt
-         (snippet-part (propertize (format "%s: %S" sender-name (taut-inbox-item-snippet item))
+         (snippet-part (propertize (format "%s: %S" sender-name (or (taut-inbox-item-snippet item) ""))
                                    'face 'taut-inbox-snippet)))
 
     ;; Construct row:

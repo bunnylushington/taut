@@ -15,6 +15,7 @@
 (require 'taut-model)
 (require 'taut-message)
 (require 'taut-api)
+(require 'taut-compose)
 
 (declare-function taut-dispatch "taut-transient")
 
@@ -36,7 +37,8 @@
 
 (defvar taut-thread-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "r") #'taut-thread-send)
+    (define-key map (kbd "r") #'taut-message-reply-normal)
+    (define-key map (kbd "R") #'taut-message-reply-quote)
     (define-key map (kbd "g") #'taut-thread-refresh)
     (define-key map (kbd "q") #'taut-thread-close)
     (define-key map (kbd "?") #'taut-dispatch)
@@ -49,14 +51,29 @@
 \\{taut-thread-mode-map}"
   (setq buffer-read-only t
         word-wrap t
-        wrap-prefix "           ")
+        wrap-prefix "         ")
   (visual-line-mode 1))
 
 ;;;; Rendering Engine
 
-(defun taut-thread-refresh ()
-  "Redraw the thread buffer contents."
-  (interactive)
+(defun taut-thread-refresh (&optional fetch-p)
+  "Redraw the thread buffer contents.
+If FETCH-P is non-nil (or when called interactively), fetch latest replies from API first."
+  (interactive "P")
+  (when (and (or fetch-p (called-interactively-p 'any))
+             taut-current-thread-ts
+             (boundp 'taut-bot-token)
+             taut-bot-token)
+    (let (root-chan-id)
+      (maphash
+       (lambda (chan-id msgs)
+         (let ((found (cl-find taut-current-thread-ts msgs :key #'taut-message-ts :test #'equal)))
+           (when found
+             (setq root-chan-id chan-id))))
+       taut-messages)
+      (when root-chan-id
+        (with-local-quit
+          (ignore-errors (taut-api-fetch-replies root-chan-id taut-current-thread-ts))))))
   (when taut-current-thread-ts
     (let ((inhibit-read-only t)
           (old-point (point))
@@ -86,17 +103,15 @@
         
         ;; Header Banner
         (insert (propertize " 💬 THREAD DISCUSSION " 'face 'taut-thread-root-header)
-                (propertize (format " in #%s\n" (if chan (taut-channel-name chan) "unknown")) 'face 'font-lock-comment-face)
-                (make-string (window-body-width) ?─)
-                "\n\n")
+                (propertize (format " in #%s\n\n" (if chan (or (taut-channel-name chan) "unknown") "unknown")) 'face 'font-lock-comment-face))
 
         ;; Root Message
-        (insert (propertize "  Root Message:\n" 'face '(:weight bold :height 0.9 :foreground "#8a8a8a")))
+        (insert (propertize "Root Message:\n" 'face '(:weight bold :height 0.9 :foreground "#8a8a8a")))
         (taut-message--render-message-line root-msg)
         
-        ;; Divider
-        (insert (propertize "  Replies:\n" 'face '(:weight bold :height 0.9 :foreground "#8a8a8a"))
-                "  " (make-string (- (window-body-width) 4) ?┄) "\n\n")
+        ;; Replies Header
+        (insert (propertize "Replies:\n" 'face '(:weight bold :height 0.9 :foreground "#8a8a8a"))
+                "\n")
 
         ;; Replies list
         (if (null replies)
@@ -147,37 +162,19 @@
       buf)))
 
 (defun taut-thread-send ()
-  "Prompt the user for a thread reply and post it."
+  "Start composing a thread reply using the compose buffer."
   (interactive)
   (unless taut-current-thread-ts
     (error "No thread is currently active in this buffer"))
-  (let* ((text (read-string "Thread Reply: "))
-         ;; Find the channel-id associated with this thread
-         (chan-id nil))
+  (let ((chan-id nil))
     (maphash
      (lambda (cid msgs)
        (when (cl-some (lambda (msg) (equal (taut-message-ts msg) taut-current-thread-ts)) msgs)
          (setq chan-id cid)))
      taut-messages)
-
-    (unless (string-blank-p text)
-      (if (and (boundp 'taut-bot-token) taut-bot-token)
-          (taut-api-post-message (or chan-id "C_UNKNOWN") text taut-current-thread-ts)
-        ;; Fallback to mock
-        (let ((ts (format "%d.0000" (time-convert nil 'integer))))
-          (taut-model-add-message
-           (make-taut-message
-            :id (concat "msg_" ts)
-            :channel-id (or chan-id "C_UNKNOWN")
-            :user-id taut-current-user-id
-            :text text
-            :ts ts
-            :thread-ts taut-current-thread-ts
-            :reply-count 0
-            :is-unread nil
-            :is-mention nil))))
-      (taut-thread-refresh)
-      (goto-char (point-max)))))
+    (if (fboundp 'taut-compose-open)
+        (taut-compose-open (or chan-id "C_UNKNOWN") taut-current-thread-ts)
+      (error "Composer is not loaded"))))
 
 (defun taut-thread-close ()
   "Close/Delete the active thread discussion window."
@@ -192,8 +189,16 @@
         (when (eq major-mode 'taut-message-mode)
           (taut-message-refresh))))))
 
+(defun taut-thread-refresh-all ()
+  "Refresh all active `taut-thread-mode` buffers."
+  (dolist (buf (buffer-list))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (eq major-mode 'taut-thread-mode)
+          (taut-thread-refresh))))))
+
 ;; Hook auto-updates
-(add-hook 'taut-model-updated-hook #'taut-thread-refresh)
+(add-hook 'taut-model-updated-hook #'taut-thread-refresh-all)
 
 (provide 'taut-thread)
 ;;; taut-thread.el ends here
