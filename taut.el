@@ -91,6 +91,29 @@ Initializes the system with sample conversations and opens the workspace."
   (interactive)
   (taut-sidebar-show))
 
+;;;###autoload
+(defun taut-reload ()
+  "Reload all Taut Emacs Lisp source files dynamically.
+This loads the latest source (.el) files to ensure that any edits
+are immediately applied, even if older byte-compiled (.elc) files exist."
+  (interactive)
+  (let ((modules '("taut-model"
+                   "taut-api"
+                   "taut-sidebar"
+                   "taut-inbox"
+                   "taut-message"
+                   "taut-thread"
+                   "taut-socket"
+                   "taut-transient"
+                   "taut"))
+        (dir (file-name-directory (or (locate-library "taut") ""))))
+    (dolist (module modules)
+      (let ((file (expand-file-name (concat module ".el") dir)))
+        (if (file-exists-p file)
+            (load file nil t)
+          (load module nil t))))
+    (message "Taut: Successfully reloaded all source modules.")))
+
 ;;;; Sample Data Initialization
 
 (defun taut-initialize-mock-data ()
