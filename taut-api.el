@@ -235,22 +235,44 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
 
 (defun taut-api-fetch-inbox-history ()
   "Pre-fetch message history for channels and DMs relevant to the Inbox.
-This includes any channel with unread messages or mentions, and recent DMs."
+This includes any channel with unread messages or mentions, and recent DMs.
+If few or no conversations are active, fall back to fetching the history of
+the first few public/private channels to populate the activity feed."
   (interactive)
   (message "Taut: Pre-fetching inbox activity history...")
   (let ((channels (taut-model-get-channels-list))
         (fetched-count 0))
     (dolist (chan channels)
       (let* ((id (taut-channel-id chan))
+             (name (taut-channel-name chan))
              (type (taut-channel-type chan))
              (unreads (or (taut-channel-unread-count chan) 0))
-             (mentions (or (taut-channel-mention-count chan) 0)))
+             (mentions (or (taut-channel-mention-count chan) 0))
+             (starred (taut-channel-is-starred chan)))
+        ;; Debug print each channel state to help locate population bugs
+        (message "Taut Debug: Channel check: ID=%s, Name=%s, Type=%s, Unreads=%d, Mentions=%d, Starred=%s"
+                 id name type unreads mentions (if starred "yes" "no"))
         (when (or (> unreads 0)
                   (> mentions 0)
-                  (eq type 'dm))
+                  (eq type 'dm)
+                  starred)
           (ignore-errors
             (taut-api-fetch-history id 20)
             (cl-incf fetched-count)))))
+    
+    ;; Fallback: if we fetched history for fewer than 3 conversations, fetch
+    ;; history for the first 5 public/private channels to seed the activity feed
+    (when (< fetched-count 3)
+      (let ((fallback-count 0))
+        (dolist (chan channels)
+          (let ((id (taut-channel-id chan))
+                (type (taut-channel-type chan)))
+            (when (and (< fallback-count 5)
+                       (member type '(public private)))
+              (ignore-errors
+                (taut-api-fetch-history id 15)
+                (cl-incf fetched-count)
+                (cl-incf fallback-count)))))))
     (message "Taut: Pre-fetched history for %d active conversations." fetched-count)))
 
 (defun taut-api-unescape-html (text)
