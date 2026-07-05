@@ -25,6 +25,15 @@
 (defvar taut-socket-retry-timer nil
   "Timer used to schedule connection retries.")
 
+(defvar taut-socket-retry-count 0
+  "Number of consecutive connection retries attempted.")
+
+(defvar taut-socket-min-retry-interval 2
+  "Minimum time in seconds to wait before retrying connection.")
+
+(defvar taut-socket-max-retry-interval 60
+  "Maximum time in seconds to wait before retrying connection.")
+
 ;; Diagnostic Metric Variables
 (defvar taut-socket-events-count 0
   "Total number of WebSocket payloads received.")
@@ -38,13 +47,27 @@
 (defvar taut-socket-last-event-type nil
   "Type string of the last received event.")
 
+(defun taut-socket-calculate-retry-interval ()
+  "Calculate the retry interval using exponential backoff with jitter."
+  (let* ((base (min taut-socket-max-retry-interval
+                    (* taut-socket-min-retry-interval
+                       (expt 2 (min 6 taut-socket-retry-count)))))
+         (jitter-range (/ base 2.0))
+         (jitter (- (random (round (max 1.0 jitter-range)))
+                    (/ jitter-range 2.0))))
+    (max taut-socket-min-retry-interval (+ base jitter))))
+
 ;;;###autoload
-(defun taut-socket-connect ()
+(defun taut-socket-connect (&optional is-retry)
   "Connect to Slack Socket Mode to receive real-time updates."
   (interactive)
   (unless taut-app-token
-    (error "Taut: `taut-app-token' (starting with xapp-) must be configured for Socket Mode"))
+    (error (concat "Taut: `taut-app-token' (starting with xapp-) "
+                   "must be configured for Socket Mode")))
   
+  (unless is-retry
+    (setq taut-socket-retry-count 0))
+
   (setq taut-socket-events-count 0
         taut-socket-events-by-type nil
         taut-socket-last-event-ts nil
@@ -58,7 +81,7 @@
             (error "Failed to retrieve WebSocket URL from response")
           (taut-socket--open-websocket ws-url)))
     (error
-     (message "Taut Socket Connection Failed: %s. Retrying in 10s..." (error-message-string err))
+     (message "Taut Socket: Connection failed: %s" (error-message-string err))
      (taut-socket-schedule-retry))))
 
 (defun taut-socket-disconnect ()
@@ -70,14 +93,19 @@
   (when taut-socket-retry-timer
     (cancel-timer taut-socket-retry-timer)
     (setq taut-socket-retry-timer nil))
+  (setq taut-socket-retry-count 0)
   (message "Taut Socket: Disconnected."))
 
 (defun taut-socket-schedule-retry ()
-  "Schedule a connection retry."
+  "Schedule a connection retry using exponential backoff with jitter."
   (when taut-socket-retry-timer
     (cancel-timer taut-socket-retry-timer))
-  (setq taut-socket-retry-timer
-        (run-with-timer 10 nil #'taut-socket-connect)))
+  (let ((interval (taut-socket-calculate-retry-interval)))
+    (cl-incf taut-socket-retry-count)
+    (message "Taut Socket: Scheduling reconnect attempt %d in %.2fs..."
+             taut-socket-retry-count interval)
+    (setq taut-socket-retry-timer
+          (run-with-timer interval nil #'taut-socket-connect t))))
 
 (defun taut-socket--open-websocket (url)
   "Open a WebSocket connection to URL and assign event callbacks."
@@ -109,10 +137,11 @@
                                    (error-message-string err)
                                    (websocket-frame-text frame)))))
          
-         :on-close (lambda (_ws)
-                     (message "Taut Socket: Connection closed by server. Reconnecting...")
-                     (setq taut-socket-ws nil)
-                     (taut-socket-schedule-retry))
+         :on-close (lambda (ws)
+                     (when (eq ws taut-socket-ws)
+                       (message "Taut Socket: Closed by server. Reconnecting...")
+                       (setq taut-socket-ws nil)
+                       (taut-socket-schedule-retry)))
          
          :on-error (lambda (_ws type err)
                      (message "Taut Socket Error (%s): %s" type err)))))
@@ -143,7 +172,8 @@
     ;; 2. Dispatch events
     (cond
      ((string= type "hello")
-      (message "Taut Socket: Handshake completed successfully. Active stream connected!"))
+      (message "Taut Socket: Handshake completed. Active stream connected!")
+      (setq taut-socket-retry-count 0))
      
      ((string= type "events_api")
       (let* ((event (cdr (assoc 'event payload)))
