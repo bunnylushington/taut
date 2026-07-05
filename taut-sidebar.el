@@ -193,6 +193,23 @@
         (cl-count-if-not #'taut-inbox-item-is-read items))
     0))
 
+(defun taut-sidebar--thread-is-hidden-p (th-ts)
+  "Return non-nil if thread TH-TS is from a hidden channel."
+  (let ((chan-id nil))
+    ;; Try replies first
+    (let ((replies (gethash th-ts taut-threads)))
+      (when replies
+        (setq chan-id (taut-message-channel-id (car replies)))))
+    ;; Fallback to searching taut-messages
+    (unless chan-id
+      (maphash (lambda (cid msgs)
+                 (when (cl-some (lambda (msg) (equal (taut-message-ts msg) th-ts)) msgs)
+                   (setq chan-id cid)))
+               taut-messages))
+    (when chan-id
+      (let ((chan (taut-model-get-channel chan-id)))
+        (and chan (taut-channel-is-hidden chan))))))
+
 (defun taut-sidebar--render-sections ()
   "Render all sections to the current buffer."
   ;; Add a line or two of space at the top of the sidebar
@@ -216,7 +233,8 @@
                                  'mouse-face 'highlight)))
     (insert "\n\n"))
   (let ((channels (taut-model-get-channels-list))
-        starred public-chans dms hidden-chans)
+        starred public-chans dms hidden-chans
+        normal-threads hidden-threads)
     
     ;; Split channels into logical lists
     (dolist (chan channels)
@@ -230,18 +248,26 @@
           (push chan dms)))
        (t (push chan public-chans))))
 
+    ;; Split threads into normal and hidden
+    (dolist (th-ts taut-watched-threads)
+      (if (taut-sidebar--thread-is-hidden-p th-ts)
+          (push th-ts hidden-threads)
+        (push th-ts normal-threads)))
+
     (setq starred (nreverse starred)
           public-chans (nreverse public-chans)
           dms (nreverse dms)
-          hidden-chans (nreverse hidden-chans))
+          hidden-chans (nreverse hidden-chans)
+          normal-threads (nreverse normal-threads)
+          hidden-threads (nreverse hidden-threads))
 
     ;; Render each section
     (taut-sidebar--render-section 'starred "★ STARRED" starred)
     (taut-sidebar--render-section 'channels "♯ CHANNELS" public-chans)
     (taut-sidebar--render-section 'dms "✉ DIRECT MESSAGES" dms)
     (taut-sidebar--render-bookmarks)
-    (taut-sidebar--render-section-threads)
-    (taut-sidebar--render-section 'hidden "🔒 HIDDEN" hidden-chans)))
+    (taut-sidebar--render-section-threads normal-threads)
+    (taut-sidebar--render-section-hidden hidden-chans hidden-threads)))
 
 (defun taut-sidebar--render-section (sym label items)
   "Render a single collapsible section identified by SYM, with LABEL and ITEMS."
@@ -315,8 +341,8 @@
                                'mouse-face 'highlight))
     (insert "\n")))
 
-(defun taut-sidebar--render-section-threads ()
-  "Render the Threads section separately."
+(defun taut-sidebar--render-section-threads (threads)
+  "Render the Threads section with specified THREADS."
   (let* ((sym 'threads)
          (expanded (alist-get sym taut-sidebar-section-state))
          (indicator (if expanded "▼" "▶"))
@@ -326,10 +352,47 @@
                         'mouse-face 'highlight
                         'taut-section sym))
     (when expanded
-      (if (null taut-watched-threads)
+      (if (null threads)
           (insert "  (no watched threads)\n")
-        (dolist (th-ts taut-watched-threads)
+        (dolist (th-ts threads)
           ;; Render a summary line for each watched thread
+          (let* ((replies (gethash th-ts taut-threads))
+                 (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
+                 (has-unreads (> unread-reply-count 0))
+                 (line-start (point))
+                 (chan-id (and replies (taut-message-channel-id (car replies)))))
+            (insert "  " (if has-unreads "● " (taut-sidebar--get-icon 'thread)))
+            (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
+              (insert (propertize (format "Thread %s" ts-suffix)
+                                  'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))))
+            (when has-unreads
+              (insert (propertize (format " (%d)" unread-reply-count)
+                                  'face 'taut-sidebar-badge-unread)))
+            (add-text-properties line-start (point)
+                                 (list 'taut-thread-ts th-ts
+                                       'taut-channel-id chan-id
+                                       'mouse-face 'highlight))
+            (insert "\n")))))
+    (insert "\n")))
+
+(defun taut-sidebar--render-section-hidden (hidden-chans hidden-threads)
+  "Render the HIDDEN section, displaying HIDDEN-CHANS and HIDDEN-THREADS."
+  (let* ((sym 'hidden)
+         (expanded (alist-get sym taut-sidebar-section-state))
+         (indicator (if expanded "▼" "▶"))
+         (display-label (taut-sidebar--get-section-label sym "HIDDEN")))
+    (insert (propertize (format "%s %s\n" indicator display-label)
+                        'face 'taut-sidebar-header
+                        'mouse-face 'highlight
+                        'taut-section sym))
+    (when expanded
+      (if (and (null hidden-chans) (null hidden-threads))
+          (insert "  (none)\n")
+        ;; Render channels
+        (dolist (chan hidden-chans)
+          (taut-sidebar--render-channel-line chan))
+        ;; Render threads from hidden channels
+        (dolist (th-ts hidden-threads)
           (let* ((replies (gethash th-ts taut-threads))
                  (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
                  (has-unreads (> unread-reply-count 0))
