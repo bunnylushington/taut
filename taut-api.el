@@ -348,21 +348,20 @@ the first few public/private channels to populate the activity feed."
               (taut-api-fetch-history id 20)
               (cl-incf fetched-count))))))
     
-    ;; Fallback: if we fetched history for fewer than 3 conversations, fetch
-    ;; history for the first 5 public/private channels to seed the activity feed
-    (when (< fetched-count 3)
-      (let ((fallback-count 0))
-        (dolist (chan channels)
-          (let ((id (taut-channel-id chan))
-                (type (taut-channel-type chan))
-                (has-cached-messages (gethash (taut-channel-id chan) taut-messages)))
-            (when (and (< fallback-count 5)
-                       (member type '(public private))
-                       (not has-cached-messages))
-              (ignore-errors
-                (taut-api-fetch-history id 15)
-                (cl-incf fetched-count)
-                (cl-incf fallback-count)))))))
+    ;; Always seed history for up to 10 public/private channels without cached
+    ;; messages to discover any unread channel activity.
+    (let ((seeded-count 0))
+      (dolist (chan channels)
+        (let* ((id (taut-channel-id chan))
+               (type (taut-channel-type chan))
+               (has-cached-messages (gethash id taut-messages)))
+          (when (and (< seeded-count 10)
+                     (member type '(public private))
+                     (not has-cached-messages))
+            (ignore-errors
+              (taut-api-fetch-history id 15)
+              (cl-incf fetched-count)
+              (cl-incf seeded-count))))))
     (message "Taut: Pre-fetched history for %d active conversations." fetched-count)))
 
 (defun taut-api-unescape-html (text)
@@ -421,6 +420,17 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                        (taut-api--request "conversations.join" `((channel . ,channel-id)) "POST")
                        (taut-api--request "conversations.history" params "GET"))
                    (signal (car err) (cdr err))))))
+         ;; Fetch last-read from conversations.info for public/private channels
+         ;; after successfully retrieving history to guarantee we joined first.
+         (last-read
+          (and chan
+               (member (taut-channel-type chan) '(public private))
+               (let* ((info-res (ignore-errors
+                                  (taut-api--request "conversations.info"
+                                                     `((channel . ,channel-id))
+                                                     "GET")))
+                      (chan-info (cdr (assoc 'channel info-res))))
+                 (cdr (assoc 'last_read chan-info)))))
          (messages (cdr (assoc 'messages res))))
     (unless latest
       ;; Keep starred/bookmarked messages so we don't lose them on refresh
@@ -455,10 +465,14 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                      (reply-count (cdr (assoc 'reply_count m)))
                      (reactions (cdr (assoc 'reactions m)))
                      (is-starred (taut-api--bool (cdr (assoc 'is_starred m))))
-                     ;; Mark as unread if it is not sent by current user and
-                     ;; falls within the last `unread-left` eligible messages.
+                     ;; Mark as unread if it is not sent by current user.
+                     ;; Use last-read if available; otherwise use index-based
+                     ;; unread-left counting.
                      (is-unread (and (not is-me)
-                                     (>= current-eligible-idx (- eligible-count unread-left))))
+                                     (if last-read
+                                         (string< last-read ts)
+                                       (>= current-eligible-idx
+                                           (- eligible-count unread-left)))))
                      ;; Convert reactions list to taut representation
                      (model-reactions nil))
                 (unless is-me
@@ -485,6 +499,20 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                   :is-starred is-starred)
                  nil
                  t)))))))
+    ;; If we fetched with last-read, we can accurately update the channel's
+    ;; unread and mention counts based on the identified unread messages.
+    (when (and chan last-read (not latest))
+      (let ((total-unreads 0)
+            (total-mentions 0))
+        (dolist (m (gethash channel-id taut-messages))
+          (when (taut-message-is-unread m)
+            (cl-incf total-unreads)
+            (when (taut-message-is-mention m)
+              (cl-incf total-mentions))))
+        (setf (taut-channel-unread-count chan) total-unreads)
+        (setf (taut-channel-mention-count chan) total-mentions)
+        (when (fboundp 'taut-cache-save-channel)
+          (taut-cache-save-channel chan))))
     (taut-model-trigger-update)
     messages))
 
