@@ -319,13 +319,13 @@ the first few public/private channels to populate the activity feed."
         ;; Debug print each channel state to help locate population bugs
         (message "Taut Debug: Channel check: ID=%s, Name=%s, Type=%s, Unreads=%d, Mentions=%d, Starred=%s"
                  id name type unreads mentions (if starred "yes" "no"))
-        (when (or (> unreads 0)
-                  (> mentions 0)
-                  (eq type 'dm)
-                  starred)
-          (ignore-errors
-            (taut-api-fetch-history id 20)
-            (cl-incf fetched-count)))))
+        (let ((has-cached-messages (gethash id taut-messages)))
+          (when (or (> unreads 0)
+                    (> mentions 0)
+                    (and (or (eq type 'dm) starred) (not has-cached-messages)))
+            (ignore-errors
+              (taut-api-fetch-history id 20)
+              (cl-incf fetched-count))))))
     
     ;; Fallback: if we fetched history for fewer than 3 conversations, fetch
     ;; history for the first 5 public/private channels to seed the activity feed
@@ -333,9 +333,11 @@ the first few public/private channels to populate the activity feed."
       (let ((fallback-count 0))
         (dolist (chan channels)
           (let ((id (taut-channel-id chan))
-                (type (taut-channel-type chan)))
+                (type (taut-channel-type chan))
+                (has-cached-messages (gethash (taut-channel-id chan) taut-messages)))
             (when (and (< fallback-count 5)
-                       (member type '(public private)))
+                       (member type '(public private))
+                       (not has-cached-messages))
               (ignore-errors
                 (taut-api-fetch-history id 15)
                 (cl-incf fetched-count)

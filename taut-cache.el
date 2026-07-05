@@ -27,6 +27,11 @@
   :type 'file
   :group 'taut)
 
+(defcustom taut-cache-keep-days 30
+  "Number of days of message history to retain in the persistent cache."
+  :type 'integer
+  :group 'taut)
+
 (defvar taut-cache--db nil
   "The active SQLite database connection.")
 
@@ -246,7 +251,25 @@ Creates the necessary tables if they do not exist."
                 (setf (gethash channel-id taut-messages) (append chan-msgs (list msg))))))))
 
       (taut-model-trigger-update)
-      (message "Taut: Loaded state from SQLite cache successfully!"))))
+      (message "Taut: Loaded state from SQLite cache successfully!")
+      (ignore-errors (taut-cache-prune)))))
+
+(defun taut-cache-prune (&optional days)
+  "Prune messages older than DAYS (default `taut-cache-keep-days') from cache."
+  (interactive)
+  (let ((db (taut-cache--get-db))
+        (days (or days taut-cache-keep-days)))
+    (when db
+      (let* ((seconds-limit (* days 24 60 60))
+             (cutoff-time (- (time-convert nil 'integer) seconds-limit))
+             (cutoff-ts (format "%d.000000" cutoff-time)))
+        (sqlite-execute db
+                        "DELETE FROM messages 
+                         WHERE ts < ? 
+                           AND is_starred = 0 
+                           AND is_mention = 0"
+                        (list cutoff-ts))
+        (message "Taut: Pruned cached messages older than %d days." days)))))
 
 (defun taut-cache-clear ()
   "Clear all persistent cache tables."
