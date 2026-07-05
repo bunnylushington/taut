@@ -573,6 +573,62 @@ Returns a string of \\=`Weekday Month Day, Year, HH:MM:SS\\='."
     ("ok_hand" . "👌"))
   "Alist mapping Slack emoji names/shortcodes to unicode characters.")
 
+(defvar taut-emoticon-alist
+  '((":-)"  . "🙂")
+    (":)"   . "🙂")
+    (":-D"  . "😃")
+    (":D"   . "😃")
+    (";-)"  . "😉")
+    (";)"   . "😉")
+    (":-P"  . "😛")
+    (":P"   . "😛")
+    (":-p"  . "😛")
+    (":p"   . "😛")
+    (":-("  . "🙁")
+    (":("   . "🙁")
+    (":-O"  . "😮")
+    (":O"   . "😮")
+    (":-o"  . "😮")
+    (":o"   . "😮")
+    ("B-)"  . "😎")
+    ("B)"   . "😎")
+    (">:-)" . "😈")
+    (">:)"  . "😈")
+    (":-/"  . "😕")
+    (":/"   . "😕")
+    ("<3"   . "❤️"))
+  "Alist mapping standard emoticons to Unicode emojis.")
+
+(defun taut-emoticon--boundary-p (char)
+  "Return non-nil if CHAR is a valid emoticon boundary (non-alphanumeric or nil)."
+  (or (null char)
+      (not (or (and (>= char ?a) (<= char ?z))
+               (and (>= char ?A) (<= char ?Z))
+               (and (>= char ?0) (<= char ?9))))))
+
+(defun taut-emoticon-translate-string (text)
+  "Translate all emoticons in TEXT to Unicode emoji equivalents.
+Emoticons are only translated if they are preceded by a non-alphanumeric
+character or beginning of string, and followed by a non-alphanumeric
+character or end of string."
+  (if (string-blank-p text)
+      text
+    (with-temp-buffer
+      (insert text)
+      (let ((case-fold-search nil))
+        (dolist (pair taut-emoticon-alist)
+          (let* ((emoticon (car pair))
+                 (emoji (cdr pair))
+                 (escaped (regexp-quote emoticon)))
+            (goto-char (point-min))
+            (while (re-search-forward escaped nil t)
+              (let ((start (match-beginning 0))
+                    (end (match-end 0)))
+                (when (and (taut-emoticon--boundary-p (char-before start))
+                           (taut-emoticon--boundary-p (char-after end)))
+                  (replace-match emoji t t)))))))
+      (buffer-string))))
+
 (defun taut-emoji-translate (name)
   "Translate Slack emoji shortcode NAME to unicode.
 Allows both raw shortcode names and bracketed format like \":raised_hands:\"."
@@ -593,7 +649,7 @@ Allows both raw shortcode names and bracketed format like \":raised_hands:\"."
 (defun taut-message--insert-formatted-line (text)
   "Parse advanced Slack formatting in a single line TEXT.
 Insert at point with premium faces and interactive links."
-  (let* ((text (or text ""))
+  (let* ((text (taut-emoticon-translate-string (or text "")))
          (start 0))
     (while (string-match "\\(\\*\\([^*]+\\)\\*\\)\\|\\(_\\([^_]+\\)_\\)\\|\\(~\\([^~]+\\)~\\)\\|\\(`\\([^`]+\\)`\\)\\|\\(<@\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<#\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<\\(https?://[^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(:\\([a-zA-Z0-9_+-]+\\):\\)" text start)
       (let ((match-start (match-beginning 0))

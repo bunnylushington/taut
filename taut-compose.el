@@ -18,9 +18,11 @@
 
 (declare-function taut-thread-refresh "taut-thread")
 (declare-function taut-compose-dispatch "taut-transient")
+(declare-function taut-emoticon-translate-string "taut-message")
 
 (defvar taut-current-thread-ts)
 (defvar taut-current-user-id)
+(defvar taut-emoticon-alist)
 
 ;;;; Buffer-Local Variables
 
@@ -58,7 +60,35 @@
                                 prefix
                                 name))))
   (setq word-wrap t)
-  (visual-line-mode 1))
+  (visual-line-mode 1)
+  (add-hook 'post-self-insert-hook #'taut-compose--post-self-insert nil t))
+
+(defun taut-compose--post-self-insert ()
+  "Translate emoticons to emojis as the user types in the compose buffer."
+  (let ((pos (point)))
+    (save-excursion
+      (let ((found nil)
+            (limit (max (point-min) (- pos 5))))
+        (goto-char pos)
+        ;; Check substrings of length 2 to 5 ending at point
+        (cl-loop for len from 2 to 5
+                 while (not found)
+                 do (let ((start (- pos len)))
+                      (when (>= start limit)
+                        (let* ((substring (buffer-substring-no-properties start pos))
+                               (match (assoc substring taut-emoticon-alist)))
+                          (when match
+                            ;; Check boundary before the emoticon
+                            (goto-char start)
+                            (when (or (bobp)
+                                      (let ((char-before (char-before)))
+                                        (or (member char-before '(?\s ?\t ?\n ?\r))
+                                            (not (or (and (>= char-before ?a) (<= char-before ?z))
+                                                     (and (>= char-before ?A) (<= char-before ?Z))
+                                                     (and (>= char-before ?0) (<= char-before ?9)))))))
+                              (setq found (cdr match))
+                              (delete-region start pos)
+                              (insert found)))))))))))
 
 ;;;; Core Composer Operations
 
@@ -95,23 +125,25 @@
 (defun taut-compose-send ()
   "Send the composed message to Slack."
   (interactive)
-  (let ((text (buffer-substring-no-properties (point-min) (point-max)))
-        (chan-id taut-compose-channel-id)
-        (thread-ts taut-compose-thread-ts))
-    (if (string-blank-p text)
+  ;; Translate any remaining emoticons (e.g. pasted or typed fast) before sending
+  (let* ((text (buffer-substring-no-properties (point-min) (point-max)))
+         (translated-text (taut-emoticon-translate-string text))
+         (chan-id taut-compose-channel-id)
+         (thread-ts taut-compose-thread-ts))
+    (if (string-blank-p translated-text)
         (message "Cannot send an empty message.")
       ;; Post the message!
       (if (and (boundp 'taut-bot-token) taut-bot-token)
-          (taut-api-post-message chan-id text thread-ts)
+          (taut-api-post-message chan-id translated-text thread-ts)
         ;; Fallback to offline/mock
         (let* ((ts (format "%d.0000" (time-convert nil 'integer)))
-               (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
+               (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) translated-text)))
           (taut-model-add-message
            (make-taut-message
             :id (concat "msg_" ts)
             :channel-id chan-id
             :user-id taut-current-user-id
-            :text text
+            :text translated-text
             :ts ts
             :thread-ts thread-ts
             :reply-count 0
