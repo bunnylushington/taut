@@ -189,7 +189,7 @@
               ;; 3. Normal incoming message or other allowed subtypes (like file sharing, bot posts)
               (t
                (let* ((user-id (or (cdr (assoc 'user event)) (cdr (assoc 'bot_id event)) "unknown"))
-                      (text (taut-api-unescape-html (or (cdr (assoc 'text event)) "")))
+                      (text (taut-api-unescape-html (taut-api--format-file-shares event (or (cdr (assoc 'text event)) ""))))
                       (ts (cdr (assoc 'ts event)))
                       (thread-ts (cdr (assoc 'thread_ts event))))
                  (message "Taut Socket: Incoming message on channel %s from user %s: %s"

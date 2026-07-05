@@ -243,6 +243,23 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
         s)
     ""))
 
+(defun taut-api--format-file-shares (event text)
+  "If EVENT contains shared files, format them and append to TEXT."
+  (let ((files (cdr (assoc 'files event)))
+        (file-links nil))
+    (dolist (f files)
+      (let ((name (or (cdr (assoc 'title f)) (cdr (assoc 'name f)) "file"))
+            (url (or (cdr (assoc 'permalink f)) (cdr (assoc 'url_private f)))))
+        (if url
+            (push (format "📎 *[Shared File]*: _%s_ (<%s|View on Slack>)" name url) file-links)
+          (push (format "📎 *[Shared File]*: _%s_" name) file-links))))
+    (if file-links
+        (let ((files-str (mapconcat #'identity (nreverse file-links) "\n")))
+          (if (and text (not (string= text "")))
+              (concat text "\n" files-str)
+            files-str))
+      text)))
+
 (defun taut-api-fetch-history (channel-id &optional limit)
   "Fetch recent history for CHANNEL-ID, translating and loading into state."
   (let* ((params `((channel . ,channel-id)
@@ -268,7 +285,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
         (when ts
           (unless (member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))
             (let* ((raw-text (or (cdr (assoc 'text m)) ""))
-                   (text (taut-api-unescape-html raw-text))
+                   (text (taut-api-unescape-html (taut-api--format-file-shares m raw-text)))
                    (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
                    (thread-ts (cdr (assoc 'thread_ts m)))
                    (reply-count (cdr (assoc 'reply_count m)))
