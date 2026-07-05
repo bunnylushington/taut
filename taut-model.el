@@ -401,10 +401,11 @@ Debounces multiple rapid model changes."
       (taut-model-trigger-update))
     found))
 
-(defun taut-model-add-message (msg &optional no-inc-reply-p)
+(defun taut-model-add-message (msg &optional no-inc-reply-p no-inc-unread-p)
   "Insert message MSG into storage, managing unreads and notifications.
 Avoid inserting duplicate messages based on timestamp TS.
-If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
+If NO-INC-REPLY-P is non-nil, do not increment root reply count.
+If NO-INC-UNREAD-P is non-nil, do not increment channel unread count."
   (let* ((chan-id (taut-message-channel-id msg))
          (chan (taut-model-get-channel chan-id))
          (thread-ts (taut-message-thread-ts msg))
@@ -447,7 +448,7 @@ If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
     ;; Update channel unread/mention statistics (only if not a duplicate)
     (unless is-duplicate
       (when (and chan (not (equal (taut-message-user-id msg) taut-current-user-id)))
-        (when (taut-message-is-unread msg)
+        (when (and (taut-message-is-unread msg) (not no-inc-unread-p))
           (unless (taut-channel-unread-count chan)
             (setf (taut-channel-unread-count chan) 0))
           (cl-incf (taut-channel-unread-count chan))

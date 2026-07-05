@@ -406,7 +406,9 @@ the first few public/private channels to populate the activity feed."
 (defun taut-api-fetch-history (channel-id &optional limit latest)
   "Fetch history for CHANNEL-ID, translating and loading into state.
 If LATEST is specified, fetch messages older than LATEST (for pagination)."
-  (let* ((params (append `((channel . ,channel-id)
+  (let* ((chan (taut-model-get-channel channel-id))
+         (unread-left (if chan (or (taut-channel-unread-count chan) 0) 0))
+         (params (append `((channel . ,channel-id)
                            (limit . ,(or limit 40)))
                          (when latest
                            `((latest . ,latest)))))
@@ -425,43 +427,64 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
       (let ((starred-msgs (cl-remove-if-not #'taut-message-is-starred (gethash channel-id taut-messages))))
         (setf (gethash channel-id taut-messages) starred-msgs)))
     (setq messages (nreverse messages))
-    (dolist (m messages)
-      (let* ((ts (cdr (assoc 'ts m)))
-             (subtype (cdr (assoc 'subtype m)))
-             (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown")))
-        ;; Skip system join/leave messages for visual cleanliness and verify TS is present
-        (when ts
-          (unless (member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))
-            (let* ((raw-text (or (cdr (assoc 'text m)) ""))
-                   (full-text (taut-api--get-message-text m raw-text))
-                   (text (taut-api-unescape-html (taut-api--format-file-shares m full-text)))
-                   (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
-                   (thread-ts (cdr (assoc 'thread_ts m)))
-                   (reply-count (cdr (assoc 'reply_count m)))
-                   (reactions (cdr (assoc 'reactions m)))
-                   (is-starred (taut-api--bool (cdr (assoc 'is_starred m))))
-                   ;; Convert reactions list to taut model representation
-                   (model-reactions nil))
-              (dolist (r reactions)
-                (let ((r-name (cdr (assoc 'name r))))
-                  (when r-name
-                    (push (cons (concat ":" r-name ":")
-                                (cdr (assoc 'users r)))
-                          model-reactions))))
-              
-              (taut-model-add-message
-               (make-taut-message
-                :id (concat "msg_" ts)
-                :channel-id channel-id
-                :user-id user-id
-                :text text
-                :ts ts
-                :thread-ts thread-ts
-                :reply-count (or reply-count 0)
-                :reactions model-reactions
-                :is-unread nil
-                :is-mention is-mention
-                :is-starred is-starred)))))))
+    ;; Count total eligible messages to decide unread threshold
+    (let ((eligible-count 0)
+          (current-eligible-idx 0))
+      (dolist (m messages)
+        (let* ((ts (cdr (assoc 'ts m)))
+               (subtype (cdr (assoc 'subtype m)))
+               (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown"))
+               (is-me (equal user-id taut-current-user-id))
+               (is-skipped (member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))))
+          (when (and ts (not is-skipped) (not is-me))
+            (cl-incf eligible-count))))
+      (dolist (m messages)
+        (let* ((ts (cdr (assoc 'ts m)))
+               (subtype (cdr (assoc 'subtype m)))
+               (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown"))
+               (is-me (equal user-id taut-current-user-id))
+               (is-skipped (member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))))
+          ;; Skip system join/leave messages and verify TS is present
+          (when ts
+            (unless is-skipped
+              (let* ((raw-text (or (cdr (assoc 'text m)) ""))
+                     (full-text (taut-api--get-message-text m raw-text))
+                     (text (taut-api-unescape-html (taut-api--format-file-shares m full-text)))
+                     (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
+                     (thread-ts (cdr (assoc 'thread_ts m)))
+                     (reply-count (cdr (assoc 'reply_count m)))
+                     (reactions (cdr (assoc 'reactions m)))
+                     (is-starred (taut-api--bool (cdr (assoc 'is_starred m))))
+                     ;; Mark as unread if it is not sent by current user and
+                     ;; falls within the last `unread-left` eligible messages.
+                     (is-unread (and (not is-me)
+                                     (>= current-eligible-idx (- eligible-count unread-left))))
+                     ;; Convert reactions list to taut representation
+                     (model-reactions nil))
+                (unless is-me
+                  (cl-incf current-eligible-idx))
+                (dolist (r reactions)
+                  (let ((r-name (cdr (assoc 'name r))))
+                    (when r-name
+                      (push (cons (concat ":" r-name ":")
+                                  (cdr (assoc 'users r)))
+                            model-reactions))))
+                
+                (taut-model-add-message
+                 (make-taut-message
+                  :id (concat "msg_" ts)
+                  :channel-id channel-id
+                  :user-id user-id
+                  :text text
+                  :ts ts
+                  :thread-ts thread-ts
+                  :reply-count (or reply-count 0)
+                  :reactions model-reactions
+                  :is-unread is-unread
+                  :is-mention is-mention
+                  :is-starred is-starred)
+                 nil
+                 t)))))))
     (taut-model-trigger-update)
     messages))
 
