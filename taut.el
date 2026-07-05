@@ -35,6 +35,12 @@
 (require 'taut-transient)
 (require 'taut-compose)
 
+;;;; Global Keybindings for Jumper
+(define-key taut-sidebar-mode-map (kbd "j") #'taut-jump)
+(define-key taut-inbox-mode-map (kbd "j") #'taut-jump)
+(define-key taut-message-mode-map (kbd "j") #'taut-jump)
+(define-key taut-thread-mode-map (kbd "j") #'taut-jump)
+
 ;;;; Global Minor Mode / Initialization Commands
 
 ;;;###autoload
@@ -95,8 +101,51 @@
   (taut-sidebar-show))
 
 ;;;###autoload
+(defun taut-jump ()
+  "Jump to any Slack channel, group, or DM using interactive completion."
+  (interactive)
+  (let* ((channels (taut-model-get-channels-list))
+         (candidates nil))
+    (dolist (chan channels)
+      (let* ((chan-name (taut-channel-name chan))
+             (chan-id (taut-channel-id chan))
+             (chan-type (taut-channel-type chan))
+             (unreads (taut-channel-unread-count chan))
+             (mentions (taut-channel-mention-count chan))
+             (starred (taut-channel-is-starred chan))
+             ;; Indicators
+             (star-indicator (if starred "★ " "  "))
+             (type-indicator (cond
+                              ((eq chan-type 'dm)
+                               (let* ((user (taut-model-get-user-by-username chan-name))
+                                      (presence (and user (taut-user-presence user))))
+                                 (cond
+                                  ((eq presence 'online) "● ")
+                                  ((eq presence 'away)   "○ ")
+                                  (t                     "  "))))
+                              ((eq chan-type 'private) "🔒 ")
+                              (t "# ")))
+             ;; Badges
+             (badge (cond
+                     ((and mentions (> mentions 0)) (format " (%d mentions! ✉)" mentions))
+                     ((and unreads (> unreads 0)) (format " (%d unreads)" unreads))
+                     (t "")))
+             ;; Complete formatted string
+             (display-string (format "%s%s%s%s" star-indicator type-indicator chan-name badge)))
+        (push (cons display-string chan-id) candidates)))
+    (if (null candidates)
+        (message "Taut: No channels or DMs available to jump to.")
+      (let* ((reversed-candidates (nreverse candidates))
+             (choice (completing-read "Jump to Channel/DM: " reversed-candidates nil t))
+             (chan-id (cdr (assoc choice reversed-candidates))))
+        (when chan-id
+          (taut-message-open chan-id)
+          (message "Jumped to %s!" choice))))))
+
+;;;###autoload
 (defun taut-quit ()
-  "Hard quit Taut: stop simulators, close WebSocket, kill buffers, and restore windows."
+  "Hard quit Taut.
+Stop simulators, close WebSocket, kill buffers, and restore windows."
   (interactive)
   ;; 1. Stop background simulation
   (when (fboundp 'taut-mock-stop)

@@ -89,6 +89,13 @@
   "Face for highlighting the parent message of the active thread."
   :group 'taut-faces)
 
+(defface taut-message-link
+  '((((background dark))  :foreground "#63b3ed" :underline t)
+    (((background light)) :foreground "#1264a3" :underline t)
+    (t                    :foreground "#1264a3" :underline t))
+  "Face for clickable general links/URLs."
+  :group 'taut-faces)
+
 ;;;; Buffer-Local Variables
 
 (defvar-local taut-current-channel-id nil
@@ -285,7 +292,8 @@
 
 (defun taut-message-refresh (&optional fetch-p)
   "Redraw the current conversation buffer.
-If FETCH-P is non-nil (or when called interactively), fetch latest history from API first."
+If FETCH-P is non-nil (or when called interactively), fetch latest
+history from API first."
   (interactive "P")
   (when (and (or fetch-p (called-interactively-p 'any))
              taut-current-channel-id
@@ -522,7 +530,8 @@ ROOT-TS is the timestamp of the parent message."
       (message "No thread found at point to toggle."))))
 
 (defun taut-message--format-ts (ts-str)
-  "Format Slack timestamp TS-STR into human 'Weekday Month Day, Year, HH:MM:SS' format."
+  "Format Slack timestamp TS-STR into human readable format.
+Returns a string of \\=`Weekday Month Day, Year, HH:MM:SS\\='."
   (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
       (let* ((epoch (string-to-number (match-string 1 ts-str)))
              (time-val (seconds-to-time epoch)))
@@ -565,7 +574,8 @@ ROOT-TS is the timestamp of the parent message."
   "Alist mapping Slack emoji names/shortcodes to unicode characters.")
 
 (defun taut-emoji-translate (name)
-  "Translate Slack emoji shortcode NAME (e.g. \"raised_hands\" or \":raised_hands:\") to unicode."
+  "Translate Slack emoji shortcode NAME to unicode.
+Allows both raw shortcode names and bracketed format like \":raised_hands:\"."
   (let* ((name (or name ""))
          (clean-name (if (and (string-prefix-p ":" name) (string-suffix-p ":" name))
                         (substring name 1 -1)
@@ -581,10 +591,11 @@ ROOT-TS is the timestamp of the parent message."
 ;;;; Rich Markdown Formatting Parser
 
 (defun taut-message--insert-formatted-line (text)
-  "Parse basic Slack formatting in a single line TEXT and insert at point with nice faces."
+  "Parse advanced Slack formatting in a single line TEXT.
+Insert at point with premium faces and interactive links."
   (let* ((text (or text ""))
          (start 0))
-    (while (string-match "\\(\\*\\([^*]+\\)\\*\\)\\|\\(_\\([^_]+\\)_\\)\\|\\(`\\([^`]+\\)`\\)\\|\\(<@\\([^>]+\\)>\\)\\|\\(:\\([a-zA-Z0-9_+-]+\\):\\)" text start)
+    (while (string-match "\\(\\*\\([^*]+\\)\\*\\)\\|\\(_\\([^_]+\\)_\\)\\|\\(~\\([^~]+\\)~\\)\\|\\(`\\([^`]+\\)`\\)\\|\\(<@\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<#\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<\\(https?://[^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(:\\([a-zA-Z0-9_+-]+\\):\\)" text start)
       (let ((match-start (match-beginning 0))
             (match-end (match-end 0)))
         ;; Insert preceding plain text
@@ -598,22 +609,94 @@ ROOT-TS is the timestamp of the parent message."
          ;; _italic_
          ((match-string 4 text)
           (insert (propertize (match-string 4 text) 'face 'italic)))
-         ;; `code`
+         ;; ~strike-through~
          ((match-string 6 text)
-          (insert (propertize (match-string 6 text) 'face 'taut-message-code)))
-         ;; <@U_ID> mention
+          (insert (propertize (match-string 6 text) 'face '(:strike-through t :foreground "#8a8a8a"))))
+         ;; `code`
          ((match-string 8 text)
-          (let* ((uid (match-string 8 text))
-                 (user (taut-model-get-user uid))
-                 (username (if user (or (taut-user-username user) uid) uid)))
-            (insert (propertize (format "@%s" username)
-                                'face 'taut-message-mention))))
-         ;; :emoji:
+          (insert (propertize (match-string 8 text) 'face 'taut-message-code)))
+         ;; <@U_ID|label> mention (interactive to open DM)
          ((match-string 10 text)
-          (let ((emoji-name (match-string 10 text)))
+          (let* ((uid (match-string 10 text))
+                 (label (match-string 12 text))
+                 (user (taut-model-get-user uid))
+                 (username (or label (if user (taut-user-username user) uid) uid)))
+            (insert (propertize (format "@%s" username)
+                                'face 'taut-message-mention
+                                'mouse-face 'highlight
+                                'help-echo (format "Click/RET to DM @%s" username)
+                                'keymap (let ((map (make-sparse-keymap)))
+                                          (define-key map (kbd "RET")
+                                            (lambda ()
+                                              (interactive)
+                                              (let ((chan-id
+                                                     (if (and (boundp 'taut-bot-token) taut-bot-token)
+                                                         (taut-api-open-dm uid)
+                                                       (let* ((mock-id (concat "C_" (upcase username) "_DM"))
+                                                              (existing (taut-model-get-channel mock-id)))
+                                                         (unless existing
+                                                           (taut-model-add-channel
+                                                            (make-taut-channel
+                                                             :id mock-id
+                                                             :name username
+                                                             :type 'dm
+                                                             :unread-count 0
+                                                             :mention-count 0)))
+                                                         mock-id))))
+                                                (taut-message-open chan-id))))
+                                          (define-key map (kbd "<mouse-1>")
+                                            (lambda (event)
+                                              (interactive "e")
+                                              (posn-set-point (event-end event))
+                                              (let ((chan-id
+                                                     (if (and (boundp 'taut-bot-token) taut-bot-token)
+                                                         (taut-api-open-dm uid)
+                                                       (let* ((mock-id (concat "C_" (upcase username) "_DM"))
+                                                              (existing (taut-model-get-channel mock-id)))
+                                                         (unless existing
+                                                           (taut-model-add-channel
+                                                            (make-taut-channel
+                                                             :id mock-id
+                                                             :name username
+                                                             :type 'dm
+                                                             :unread-count 0
+                                                             :mention-count 0)))
+                                                         mock-id))))
+                                                (taut-message-open chan-id))))
+                                          map)))))
+         ;; <#C_ID|label> channel link (interactive to open channel)
+         ((match-string 14 text)
+          (let* ((cid (match-string 14 text))
+                 (label (match-string 16 text))
+                 (chan (taut-model-get-channel cid))
+                 (chan-name (or label (if chan (taut-channel-name chan) cid) cid)))
+            (insert (propertize (format "#%s" chan-name)
+                                'face 'taut-message-mention
+                                'mouse-face 'highlight
+                                'help-echo (format "Click/RET to jump to channel #%s" chan-name)
+                                'taut-channel-id cid
+                                'keymap (let ((map (make-sparse-keymap)))
+                                          (define-key map (kbd "RET") (lambda () (interactive) (taut-message-open cid)))
+                                          (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (taut-message-open cid)))
+                                          map)))))
+         ;; <https://...|label> general link (interactive to open URL)
+         ((match-string 18 text)
+          (let* ((url (match-string 18 text))
+                 (label (or (match-string 20 text) url)))
+            (insert (propertize label
+                                'face 'taut-message-link
+                                'mouse-face 'highlight
+                                'help-echo (format "Click/RET to open link: %s" url)
+                                'keymap (let ((map (make-sparse-keymap)))
+                                          (define-key map (kbd "RET") (lambda () (interactive) (browse-url url)))
+                                          (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (browse-url url)))
+                                          map)))))
+         ;; :emoji:
+         ((match-string 22 text)
+          (let ((emoji-name (match-string 22 text)))
             (insert (taut-emoji-translate emoji-name)))))
-        
-        (setq start match-end)))
+         
+         (setq start match-end)))
     ;; Insert trailing plain text
     (insert (substring text start))))
 
@@ -754,7 +837,8 @@ ROOT-TS is the timestamp of the parent message."
     buf))
 
 (defun taut-message-send ()
-  "Start composing a new message in the current conversation buffer using the compose buffer."
+  "Start composing a new message in the current conversation buffer.
+Uses the dedicated compose buffer."
   (interactive)
   (unless taut-current-channel-id
     (error "Not in an active conversation buffer"))
@@ -773,33 +857,57 @@ ROOT-TS is the timestamp of the parent message."
         (message "Thread view is not yet loaded.")))))
 
 (defun taut-message-add-reaction ()
-  "Add an emoji reaction to the message under the cursor."
+  "Add an emoji reaction to the message under the cursor.
+Uses a premium autocomplete picker mapping emojis and shortcodes."
   (interactive)
-  (let ((msg-id (get-text-property (point) 'taut-message-id))
-        (ts (get-text-property (point) 'taut-message-ts)))
-    (if (or (null msg-id) (null ts))
+  (let* ((msg-id (get-text-property (point) 'taut-message-id))
+         (ts (get-text-property (point) 'taut-message-ts))
+         (msg (and ts (taut-model-get-message-by-ts ts)))
+         (chan-id (and msg (taut-message-channel-id msg))))
+    (if (or (null msg-id) (null ts) (null chan-id))
         (message "No message under point to react to.")
-      (let* ((emoji (read-string "Reaction Emoji (e.g. 👍, 🎉, 😄): ")))
-        (unless (string-blank-p emoji)
-          (if (and (boundp 'taut-bot-token) taut-bot-token)
-              (progn
-                (taut-api-add-reaction taut-current-channel-id ts emoji)
-                (ignore-errors (taut-api-fetch-history taut-current-channel-id)))
-            ;; Fallback to offline/mock
-            (let* ((chan-msgs (taut-model-get-messages taut-current-channel-id))
-                   (msg (cl-find msg-id chan-msgs :key #'taut-message-id :test #'equal)))
-              (when msg
-                (let* ((reactions (taut-message-reactions msg))
-                       (existing (assoc emoji reactions)))
-                  (if existing
-                      ;; Toggle user in list
-                      (if (member taut-current-user-id (cdr existing))
-                          (setcdr existing (delete taut-current-user-id (cdr existing)))
-                        (setcdr existing (append (cdr existing) (list taut-current-user-id))))
-                    ;; Append new reaction
-                    (setf (taut-message-reactions msg)
-                          (append reactions (list (cons emoji (list taut-current-user-id))))))))))
-          (taut-message-refresh))))))
+      (let* ((candidates nil))
+        (dolist (item taut-emoji-alist)
+          (let* ((shortcode (car item))
+                 (unicode (cdr item))
+                 (display-str (format "%s  :%s:" unicode shortcode)))
+            (unless (assoc display-str candidates)
+              (push (cons display-str shortcode) candidates))))
+        (setq candidates (nreverse candidates))
+        (let* ((choice (completing-read "Add reaction (emoji/shortcode): " candidates nil nil))
+               (emoji (or (cdr (assoc choice candidates)) choice)))
+          (unless (string-blank-p emoji)
+            (let ((is-online (and (boundp 'taut-bot-token) taut-bot-token)))
+              (if is-online
+                  (taut-api-add-reaction chan-id ts emoji)
+                ;; Fallback to offline/mock
+                (let* ((chan-msgs (taut-model-get-messages chan-id))
+                       (target-msg (cl-find msg-id chan-msgs :key #'taut-message-id :test #'equal)))
+                  (unless target-msg
+                    ;; Check thread replies
+                    (maphash (lambda (_thread-ts replies)
+                               (unless target-msg
+                                 (setq target-msg (cl-find msg-id replies :key #'taut-message-id :test #'equal))))
+                             taut-threads))
+                  (when target-msg
+                    (let* ((reactions (taut-message-reactions target-msg))
+                           (existing (assoc emoji reactions)))
+                      (if existing
+                          ;; Toggle user in list
+                          (if (member taut-current-user-id (cdr existing))
+                              (setcdr existing (delete taut-current-user-id (cdr existing)))
+                            (setcdr existing (append (cdr existing) (list taut-current-user-id))))
+                        ;; Append new reaction
+                        (setf (taut-message-reactions target-msg)
+                              (append reactions (list (cons emoji (list taut-current-user-id))))))))))
+              ;; If online, re-fetch history or replies to sync with server state
+              (when is-online
+                (let ((thread-ts (taut-message-thread-ts msg)))
+                  (if (and thread-ts (not (equal thread-ts ts)))
+                      (ignore-errors (taut-api-fetch-replies chan-id thread-ts))
+                    (ignore-errors (taut-api-fetch-history chan-id)))))
+              (taut-model-trigger-update)
+              (taut-message-refresh))))))))
 
 (defun taut-message-toggle-star ()
   "Star or unstar (bookmark) the message under the cursor."

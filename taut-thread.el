@@ -68,7 +68,8 @@
 
 (defun taut-thread-refresh (&optional fetch-p)
   "Redraw the thread buffer contents.
-If FETCH-P is non-nil (or when called interactively), fetch latest replies from API first."
+If FETCH-P is non-nil (or when called interactively), fetch latest
+replies from API first."
   (interactive "P")
   (when (and (or fetch-p (called-interactively-p 'any))
              taut-current-thread-ts
