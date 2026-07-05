@@ -442,6 +442,47 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
   (setq taut-inbox-filter 'threads)
   (taut-inbox-refresh))
 
+(defun taut-inbox--focus-buffer (buf-or-name)
+  "Find and focus a window, tab, or frame displaying BUF-OR-NAME.
+Returns non-nil if the buffer was found and focused."
+  (let* ((buf (get-buffer buf-or-name))
+         (found nil))
+    (when buf
+      ;; 1. Check if it's already visible in any window on any frame
+      (let ((win (get-buffer-window buf t)))
+        (when win
+          (select-frame-set-input-focus (window-frame win))
+          (select-window win)
+          (setq found t)))
+      
+      ;; 2. If not found, search through tabs of all frames
+      (unless found
+        (when (and (require 'tab-bar nil t)
+                   (fboundp 'tab-bar-tabs))
+          (catch 'done
+            (dolist (frame (frame-list))
+              ;; Get tabs for this frame
+              (let ((tabs (frame-parameter frame 'tabs)))
+                (dolist (tab tabs)
+                  ;; A tab is (tab (name . "...") ... (wc-bl ...))
+                  (when (eq (car tab) 'tab)
+                    (let* ((props (cdr tab))
+                           (wc-bl (cdr (assq 'wc-bl props)))
+                           (tab-name (cdr (assq 'name props))))
+                      (when (and tab-name (member buf wc-bl))
+                        ;; Switch to the frame
+                        (select-frame-set-input-focus frame)
+                        ;; Switch to the tab
+                        (with-selected-frame frame
+                          (tab-bar-select-tab-by-name tab-name))
+                        ;; Now buffer should be visible in some window of the frame
+                        (let ((win (get-buffer-window buf frame)))
+                          (when win
+                            (select-window win)))
+                        (setq found t)
+                        (throw 'done t))))))))))
+    found)))
+
 (defun taut-inbox-show ()
   "Display the Slack Activity in the active central window."
   (interactive)
@@ -450,12 +491,13 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
     (with-current-buffer buf
       (unless (eq major-mode 'taut-inbox-mode)
         (taut-inbox-mode)))
-    (cond
-     ((and sidebar-win (eq (selected-window) sidebar-win))
-      (select-window (next-window sidebar-win))
-      (switch-to-buffer buf))
-     (t
-      (switch-to-buffer buf)))
+    (unless (taut-inbox--focus-buffer buf)
+      (cond
+       ((and sidebar-win (eq (selected-window) sidebar-win))
+        (select-window (next-window sidebar-win))
+        (switch-to-buffer buf))
+       (t
+        (switch-to-buffer buf))))
     (taut-inbox-refresh)
     buf))
 
