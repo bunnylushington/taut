@@ -245,17 +245,24 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
             " "))
          ;; Excerpt
          (clean-text (taut-inbox--clean-snippet (taut-inbox-item-snippet item)))
-         (snippet-part (propertize clean-text 'face 'taut-inbox-snippet)))
+         (unread-cnt (and (taut-inbox-item-unread-count item)
+                          (taut-inbox-item-unread-count item)))
+         (snippet-prefix (if (and unread-cnt (> unread-cnt 1))
+                             (propertize (format "[%d unreads] " unread-cnt)
+                                         'face '(:weight bold :foreground "#ff4a80"))
+                           ""))
+         (snippet-part (concat snippet-prefix (propertize clean-text 'face 'taut-inbox-snippet))))
 
     ;; Construct row:
     ;; •  [Today 14:35]  👤 DM  Greg Rhoades: definitely interested. slack in emacs is...
     ;; •  [Thursday]  💬 THREAD  Tony Akens  in  #ip4g-product-dev : if y'all don't have access to gr...
-    (insert "  " unread-marker " " time-part "  " badge-part "  " sender-part channel-part ": " snippet-part "\n")
+    (insert "  " unread-marker " " time-part "  " badge-part "  " sender-part channel-part ": " snippet-part)
     
-    ;; Apply text properties to the entire row for click actions
+    ;; Apply text properties to the row (excluding newline) for clicks
     (add-text-properties row-start (point)
                          (list 'taut-inbox-item item
-                               'mouse-face 'highlight))))
+                               'mouse-face 'highlight))
+    (insert "\n")))
 
 (defun taut-inbox--format-relative-date (ts-str)
   "Format Slack timestamp TS-STR into a relative date string.
@@ -323,7 +330,7 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
           ;; DM or Mention: mark channel read and open channel buffer
           (taut-model-mark-channel-read chan-id)
           (if (fboundp 'taut-message-open)
-              (funcall 'taut-message-open chan-id)
+              (funcall 'taut-message-open chan-id t)
             (message "Opening channel %s" chan-id))))))))
 
 (defun taut-inbox-mouse-activate (event)

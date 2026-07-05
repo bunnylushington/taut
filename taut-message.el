@@ -982,8 +982,9 @@ Insert at point with premium faces and interactive links."
 
 ;;;; Interactive Actions
 
-(defun taut-message-open (chan-id)
-  "Switch to the conversation buffer for CHAN-ID in the active main window."
+(defun taut-message-open (chan-id &optional other-window)
+  "Switch to the conversation buffer for CHAN-ID.
+If OTHER-WINDOW is non-nil, open the buffer in another window."
   (let* ((chan (taut-model-get-channel chan-id))
          (chan-type (if chan (taut-channel-type chan) 'public))
          (chan-name (if chan (taut-channel-name chan) chan-id))
@@ -1008,11 +1009,16 @@ Insert at point with premium faces and interactive links."
     
     ;; Make sure we don't open inside the Sidebar window
     (let ((sidebar-win (get-buffer-window "*Taut Sidebar*")))
-      (if (and sidebar-win (eq (selected-window) sidebar-win))
-          (progn
-            (select-window (next-window sidebar-win))
-            (switch-to-buffer buf))
-        (switch-to-buffer buf)))
+      (cond
+       ((and sidebar-win (eq (selected-window) sidebar-win))
+        (select-window (next-window sidebar-win))
+        (if other-window
+            (switch-to-buffer-other-window buf)
+          (switch-to-buffer buf)))
+       (other-window
+        (switch-to-buffer-other-window buf))
+       (t
+        (switch-to-buffer buf))))
     
     (goto-char (point-max))
     (redisplay t)

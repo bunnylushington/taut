@@ -160,12 +160,27 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
 (defun taut-api--get-message-text (msg-data raw-text)
   "Get combined message text from RAW-TEXT and attachments."
   (let* ((attachment-text (taut-api--extract-attachments-text msg-data))
-         (clean-raw (or raw-text "")))
-    (if (string-blank-p clean-raw)
-        attachment-text
-      (if (string-blank-p attachment-text)
-          clean-raw
-        (concat clean-raw "\n" attachment-text)))))
+         (clean-raw (or raw-text ""))
+         (subtype (cdr (assoc 'subtype msg-data)))
+         (room (cdr (assoc 'room msg-data)))
+         (call (cdr (assoc 'call msg-data)))
+         (huddle (cdr (assoc 'huddle msg-data)))
+         (text-to-use
+          (if (string-blank-p clean-raw)
+              (cond
+               ((or (equal subtype "huddle_thread") room huddle)
+                (let* ((room-name (and room (cdr (assoc 'name room))))
+                       (has-ended (and room (not (eq (cdr (assoc 'has_ended room)) :json-false)))))
+                  (format "📞 Slack Huddle%s%s"
+                          (if room-name (format ": %s" room-name) "")
+                          (if has-ended " (Ended)" " in progress"))))
+               ((or (equal subtype "call_id") call)
+                "📞 Slack Call")
+               (t attachment-text))
+            (if (string-blank-p attachment-text)
+                clean-raw
+              (concat clean-raw "\n" attachment-text)))))
+    text-to-use))
 
 (defun taut-api--clean-mpim-name (raw-name)
   "Clean up MPIM raw name (mpdm-a--b-1 -> a, b)."

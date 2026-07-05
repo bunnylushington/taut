@@ -73,7 +73,8 @@
   title         ; e.g., "#development", "DM: @alice", "Thread: #ideas"
   snippet       ; Message excerpt
   ts            ; Timestamp of the update
-  is-read)      ; t or nil
+  is-read       ; t or nil
+  unread-count) ; Optional: number of unread messages rolled up
 
 ;;;; In-Memory Databases
 
@@ -248,58 +249,76 @@ Unified Inbox contains:
 
 (defun taut-model-get-activity-items ()
   "Query and construct a list of active and recent `taut-inbox-item' objects.
-Includes unread and read items across channels, DMs, mentions, and threads."
+Includes unread and read items across channels, DMs, mentions, and threads,
+rolled up by source conversation (channel or DM)."
   (let (items)
-    ;; 1 & 2: DMs, Mentions, and Unread Channel Messages
+    ;; 1 & 2: DMs, Mentions, and Unread Channel Messages (grouped by channel)
     (maphash
      (lambda (chan-id chan)
-       (let ((msgs (gethash chan-id taut-messages)))
-         (dolist (msg msgs)
-           ;; Skip messages sent by me
-           (unless (equal (taut-message-user-id msg) taut-current-user-id)
-             (let ((is-unread (taut-message-is-unread msg))
-                   (is-mention (taut-message-is-mention msg))
-                   (is-dm (eq (taut-channel-type chan) 'dm)))
-               (cond
-                ;; Direct Messages: include all (both read and unread)
-                (is-dm
+       (let* ((msgs (gethash chan-id taut-messages))
+              ;; Keep only non-me messages
+              (non-me-msgs (cl-remove-if (lambda (m) (equal (taut-message-user-id m) taut-current-user-id)) msgs))
+              (is-dm (eq (taut-channel-type chan) 'dm))
+              ;; Relevant messages: all for DM, unreads/mentions for channels
+              (relevant-msgs
+               (cl-remove-if-not
+                (lambda (m)
+                  (if is-dm
+                      t
+                    (or (taut-message-is-unread m)
+                        (taut-message-is-mention m))))
+                non-me-msgs)))
+         (when relevant-msgs
+           ;; Sort chronologically (ascending by ts)
+           (setq relevant-msgs
+                 (sort relevant-msgs
+                       (lambda (a b)
+                         (string< (or (taut-message-ts a) "")
+                                  (or (taut-message-ts b) "")))))
+           (let* ((unread-msgs (cl-remove-if-not #'taut-message-is-unread relevant-msgs))
+                  (unread-count (length unread-msgs))
+                  (has-mention (cl-some #'taut-message-is-mention relevant-msgs)))
+             (if (> unread-count 0)
+                 ;; Show the FIRST unread message
+                 (let* ((first-unread (car unread-msgs))
+                        (type (cond
+                               (is-dm 'dm)
+                               (has-mention 'mention)
+                               (t 'channel))))
+                   (push (make-taut-inbox-item
+                          :id (taut-message-ts first-unread)
+                          :type type
+                          :channel-id chan-id
+                          :message-id (taut-message-id first-unread)
+                          :user-id (taut-message-user-id first-unread)
+                          :title (if is-dm
+                                     (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
+                                   (format "#%s" (or (taut-channel-name chan) "unknown")))
+                          :snippet (taut-message-text first-unread)
+                          :ts (taut-message-ts first-unread)
+                          :is-read nil
+                          :unread-count unread-count)
+                         items))
+               ;; No unreads: show LAST message (read DM/mention)
+               (let* ((last-msg (car (last relevant-msgs)))
+                      (type (cond
+                             (is-dm 'dm)
+                             (has-mention 'mention)
+                             (t 'channel))))
                  (push (make-taut-inbox-item
-                        :id (taut-message-ts msg)
-                        :type 'dm
+                        :id (taut-message-ts last-msg)
+                        :type type
                         :channel-id chan-id
-                        :message-id (taut-message-id msg)
-                        :user-id (taut-message-user-id msg)
-                        :title (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
-                        :snippet (taut-message-text msg)
-                        :ts (taut-message-ts msg)
-                        :is-read (not is-unread))
-                       items))
-                ;; Mentions: include all (both read and unread)
-                (is-mention
-                 (push (make-taut-inbox-item
-                        :id (taut-message-ts msg)
-                        :type 'mention
-                        :channel-id chan-id
-                        :message-id (taut-message-id msg)
-                        :user-id (taut-message-user-id msg)
-                        :title (format "#%s" (or (taut-channel-name chan) "unknown"))
-                        :snippet (taut-message-text msg)
-                        :ts (taut-message-ts msg)
-                        :is-read (not is-unread))
-                       items))
-                ;; Normal Channel Messages: include ONLY if unread
-                (is-unread
-                 (push (make-taut-inbox-item
-                        :id (taut-message-ts msg)
-                        :type 'channel
-                        :channel-id chan-id
-                        :message-id (taut-message-id msg)
-                        :user-id (taut-message-user-id msg)
-                        :title (format "#%s" (or (taut-channel-name chan) "unknown"))
-                        :snippet (taut-message-text msg)
-                        :ts (taut-message-ts msg)
-                        :is-read nil)
-                       items))))))))
+                        :message-id (taut-message-id last-msg)
+                        :user-id (taut-message-user-id last-msg)
+                        :title (if is-dm
+                                   (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
+                                 (format "#%s" (or (taut-channel-name chan) "unknown")))
+                        :snippet (taut-message-text last-msg)
+                        :ts (taut-message-ts last-msg)
+                        :is-read t
+                        :unread-count 0)
+                       items)))))))
      taut-channels)
 
     ;; 3: Thread updates
@@ -325,7 +344,8 @@ Includes unread and read items across channels, DMs, mentions, and threads."
                        :title (if is-dm (format "Thread in DM: @%s" chan-name) (format "Thread: #%s" chan-name))
                        :snippet (format "Reply: %s" (taut-message-text newest-non-me-reply))
                        :ts (taut-message-ts newest-non-me-reply)
-                       :is-read (not (taut-message-is-unread newest-non-me-reply)))
+                       :is-read (not (taut-message-is-unread newest-non-me-reply))
+                       :unread-count (length (cl-remove-if-not #'taut-message-is-unread non-me-replies)))
                       items)))))))
 
     ;; Sort items descending by timestamp so most recent is on top
