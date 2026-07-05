@@ -152,9 +152,20 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
   "Fetch channels (public, private, DM) and populate `taut-channels'."
   (interactive)
   (message "Taut: Syncing conversations list...")
-  (let* ((params '((types . "public_channel,private_channel,im,mpim")
+  (let* ((types "public_channel,private_channel,im,mpim")
+         (params `((types . ,types)
                    (limit . 100)))
-         (res (taut-api--request "conversations.list" params "POST"))
+         (res (condition-case err
+                  (taut-api--request "conversations.list" params "GET")
+                (error
+                 (if (string-match-p "missing_scope" (error-message-string err))
+                     (progn
+                       (message "Taut: private_channel scope missing; retrying...")
+                       (taut-api--request "conversations.list"
+                                          '((types . "public_channel,im,mpim")
+                                            (limit . 100))
+                                          "GET"))
+                   (signal (car err) (cdr err))))))
          (channels (cdr (assoc 'channels res))))
     (dolist (c channels)
       (let* ((id (cdr (assoc 'id c)))
@@ -334,17 +345,17 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                          (when latest
                            `((latest . ,latest)))))
          (res (condition-case err
-                  (taut-api--request "conversations.history" params "POST")
+                  (taut-api--request "conversations.history" params "GET")
                 (error
                  (if (string-match-p "not_in_channel" (error-message-string err))
                      (progn
                        (message "Taut: Joining channel %s..." channel-id)
                        (taut-api--request "conversations.join" `((channel . ,channel-id)) "POST")
-                       (taut-api--request "conversations.history" params "POST"))
+                       (taut-api--request "conversations.history" params "GET"))
                    (signal (car err) (cdr err))))))
          (messages (cdr (assoc 'messages res))))
     (unless latest
-      ;; Keep starred/bookmarked messages so we don't lose them when history is refreshed
+      ;; Keep starred/bookmarked messages so we don't lose them on refresh
       (let ((starred-msgs (cl-remove-if-not #'taut-message-is-starred (gethash channel-id taut-messages))))
         (setf (gethash channel-id taut-messages) starred-msgs)))
     (setq messages (nreverse messages))
