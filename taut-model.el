@@ -159,6 +159,18 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
                   star-a
                 (string< (or (taut-channel-name a) "") (or (taut-channel-name b) ""))))))))
 
+(defun taut-model-channel-active-last-30-days-p (channel-id)
+  "Check if CHANNEL-ID has had message activity in the last 30 days."
+  (let* ((msgs (taut-model-get-messages channel-id))
+         (latest-msg (car (last msgs))))
+    (if latest-msg
+        (let* ((ts-str (taut-message-ts latest-msg))
+               (epoch (and ts-str (string-to-number ts-str)))
+               (now (float-time))
+               (diff (and epoch (- now epoch))))
+          (and diff (< diff 2592000))) ; 30 days = 30 * 86400 seconds
+      nil)))
+
 ;;;; Derive Gnus-Style Inbox Items
 
 (defun taut-model-get-inbox-items ()

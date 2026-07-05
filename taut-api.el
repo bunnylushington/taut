@@ -139,6 +139,15 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :is-me (equal id taut-current-user-id))))))
   (message "Taut: Synced %d workspace users." (hash-table-count taut-users))))
 
+(defun taut-api--clean-mpim-name (raw-name)
+  "Clean up MPIM raw name (mpdm-a--b-1 -> a, b)."
+  (if (and raw-name (string-prefix-p "mpdm-" raw-name))
+      (let* ((name (substring raw-name 5)) ; strip mpdm-
+             (name (replace-regexp-in-string "-[0-9]+$" "" name)) ; strip trailing -1
+             (name (replace-regexp-in-string "--" ", " name))) ; replace -- with ,
+        name)
+    raw-name))
+
 (defun taut-api-fetch-channels ()
   "Fetch channels (public, private, DM) and populate `taut-channels'."
   (interactive)
@@ -150,6 +159,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
     (dolist (c channels)
       (let* ((id (cdr (assoc 'id c)))
              (is-im (cdr (assoc 'is_im c)))
+             (is-mpim (cdr (assoc 'is_mpim c)))
              (is-private (cdr (assoc 'is_private c)))
              (unread-count (or (cdr (assoc 'unread_count c)) 0))
              ;; Map name nicely
@@ -158,16 +168,19 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                          (let* ((uid (cdr (assoc 'user c)))
                                 (user (taut-model-get-user uid)))
                            (or (and user (taut-user-username user)) (concat "user-" (or uid "unknown")))))
+                        (is-mpim
+                         (taut-api--clean-mpim-name (cdr (assoc 'name c))))
                         (t (cdr (assoc 'name c))))
                        id
                        "unknown"))
              (type (cond
-                    (is-im 'dm)
+                    ((or is-im is-mpim) 'dm)
                     (is-private 'private)
                     (t 'public)))
              (is-member (cdr (assoc 'is_member c))))
         (when (or (not taut-only-show-subscribed-channels)
                   is-im
+                  is-mpim
                   is-member)
           (taut-model-add-channel
            (make-taut-channel

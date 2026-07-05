@@ -126,7 +126,11 @@
     (dolist (chan channels)
       (cond
        ((taut-channel-is-starred chan) (push chan starred))
-       ((eq (taut-channel-type chan) 'dm) (push chan dms))
+       ((eq (taut-channel-type chan) 'dm)
+        (when (or (> (or (taut-channel-unread-count chan) 0) 0)
+                  (> (or (taut-channel-mention-count chan) 0) 0)
+                  (taut-model-channel-active-last-30-days-p (taut-channel-id chan)))
+          (push chan dms)))
        (t (push chan public-chans))))
 
     (setq starred (nreverse starred)
@@ -165,7 +169,9 @@
          (chan-name (or (taut-channel-name chan) "unknown"))
          (name-prefix (if (eq (taut-channel-type chan) 'dm)
                           (let ((user (taut-model-get-user-by-username chan-name)))
-                            (taut-sidebar--user-status-indicator user))
+                            (if user
+                                (taut-sidebar--user-status-indicator user)
+                              "👥 "))
                         "# "))
          (chan-line-start (point)))
     
