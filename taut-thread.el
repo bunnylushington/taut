@@ -18,6 +18,7 @@
 (require 'taut-compose)
 
 (declare-function taut-dispatch "taut-transient")
+(declare-function taut-message-upload-file "taut-message")
 
 ;;;; Faces
 
@@ -33,6 +34,9 @@
 (defvar-local taut-current-thread-ts nil
   "The thread-ts representing the active thread in this buffer.")
 
+(defvar-local taut-current-channel-id nil
+  "The channel-id associated with the active thread in this buffer.")
+
 ;;;; Major Mode Definition
 
 (defvar taut-thread-mode-map (make-sparse-keymap)
@@ -45,6 +49,7 @@
 (define-key taut-thread-mode-map (kbd "n") #'taut-message-next)
 (define-key taut-thread-mode-map (kbd "p") #'taut-message-previous)
 (define-key taut-thread-mode-map (kbd "g") #'taut-thread-refresh)
+(define-key taut-thread-mode-map (kbd "u") #'taut-message-upload-file)
 (define-key taut-thread-mode-map (kbd "q") #'taut-thread-close)
 (define-key taut-thread-mode-map (kbd "v") #'taut-message-view-at-point)
 (define-key taut-thread-mode-map (kbd "e") #'taut-message-view-at-point)
@@ -146,6 +151,8 @@ replies from API first."
                    (when (cl-some (lambda (msg) (equal (taut-message-ts msg) thread-ts)) msgs)
                      (setq chan-id cid)))
                  taut-messages)
+        (when chan-id
+          (setq taut-current-channel-id chan-id))
         (when (and chan-id (boundp 'taut-bot-token) taut-bot-token)
           (ignore-errors (taut-api-fetch-replies chan-id thread-ts))))
       (taut-thread-refresh))
@@ -177,14 +184,9 @@ replies from API first."
   (interactive)
   (unless taut-current-thread-ts
     (error "No thread is currently active in this buffer"))
-  (let ((chan-id nil))
-    (maphash
-     (lambda (cid msgs)
-       (when (cl-some (lambda (msg) (equal (taut-message-ts msg) taut-current-thread-ts)) msgs)
-         (setq chan-id cid)))
-     taut-messages)
+  (let ((chan-id (or taut-current-channel-id "C_UNKNOWN")))
     (if (fboundp 'taut-compose-open)
-        (taut-compose-open (or chan-id "C_UNKNOWN") taut-current-thread-ts)
+        (taut-compose-open chan-id taut-current-thread-ts)
       (error "Composer is not loaded"))))
 
 (defun taut-thread-close ()

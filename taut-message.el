@@ -16,6 +16,7 @@
 (require 'taut-api)
 (declare-function taut-message-reply-normal "taut-compose")
 (declare-function taut-message-reply-quote "taut-compose")
+(declare-function taut-thread-refresh "taut-thread")
 
 (declare-function taut-code-block-dispatch "taut-transient")
 
@@ -235,6 +236,7 @@
 (define-key taut-message-mode-map (kbd "e") #'taut-message-view-at-point)
 (define-key taut-message-mode-map (kbd "s") #'taut-message-save-at-point)
 (define-key taut-message-mode-map (kbd "c") #'taut-message-copy-at-point)
+(define-key taut-message-mode-map (kbd "u") #'taut-message-upload-file)
 (define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
@@ -1058,6 +1060,43 @@ Uses a premium autocomplete picker mapping emojis and shortcodes."
       (with-current-buffer buf
         (when (eq major-mode 'taut-message-mode)
           (taut-message-refresh))))))
+
+;;;###autoload
+(defun taut-message-upload-file (file-path)
+  "Upload a file selected by FILE-PATH to the current channel/thread."
+  (interactive "fUpload File: ")
+  (unless taut-current-channel-id
+    (error "Not in an active conversation buffer"))
+  (let ((chan-id taut-current-channel-id)
+        (thread-ts (and (boundp 'taut-current-thread-ts) taut-current-thread-ts))
+        (is-thread (eq major-mode 'taut-thread-mode)))
+    (if (and (boundp 'taut-bot-token) taut-bot-token)
+        (progn
+          (taut-api-upload-file chan-id file-path thread-ts)
+          ;; Refresh chat or thread after API upload
+          (if is-thread
+              (taut-thread-refresh t)
+            (taut-message-refresh t)))
+      ;; Offline/Mock fallback
+      (let* ((filename (file-name-nondirectory file-path))
+             (size (file-attribute-size (file-attributes file-path)))
+             (ts (format "%d.0000" (time-convert nil 'integer)))
+             (mock-text (format "📎 *Uploaded file*: _%s_ (%d bytes)" filename size)))
+        (taut-model-add-message
+         (make-taut-message
+          :id (concat "msg_" ts)
+          :channel-id chan-id
+          :user-id taut-current-user-id
+          :text mock-text
+          :ts ts
+          :thread-ts thread-ts
+          :reply-count 0
+          :is-unread nil
+          :is-mention nil))
+        (if is-thread
+            (taut-thread-refresh)
+          (taut-message-refresh))
+        (message "Taut: Simulated upload of %s (%d bytes)" filename size)))))
 
 ;; Hook auto-updates
 (add-hook 'taut-model-updated-hook #'taut-message-refresh-all)

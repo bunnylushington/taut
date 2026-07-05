@@ -24,6 +24,7 @@
 (declare-function taut-inbox-show "taut-inbox")
 (declare-function taut-inbox-bury "taut-inbox")
 (declare-function taut-message-refresh "taut-message")
+(declare-function taut-message-upload-file "taut-message")
 (declare-function taut-message-reply-normal "taut-compose")
 (declare-function taut-message-reply-quote "taut-compose")
 (declare-function taut-message-start-thread "taut-message")
@@ -56,6 +57,7 @@
     ("r" "Reply / Send Message" taut-message-reply-normal)
     ("R" "Reply quoting Msg"   taut-message-reply-quote)
     ("a" "Add Emoji Reaction"  taut-message-add-reaction)
+    ("u" "Upload File"         taut-message-upload-file)
     ("g" "Refresh Chat History" taut-message-refresh)]
    ["Thread Actions"
     ("RET" "Open Sidebar Thread (Pane)" taut-message-start-thread)

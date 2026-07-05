@@ -410,5 +410,46 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
       (error "Taut API Error: Failed to open DM with %s: %s"
              user-id (or (cdr (assoc 'error res)) "unknown error")))))
 
+(defun taut-api-upload-file (channel-id file-path &optional thread-ts)
+  "Upload a file at FILE-PATH to CHANNEL-ID (and optionally THREAD-TS).
+Implements Slack's modern 3-step files upload flow:
+1. files.getUploadURLExternal to get a temporary upload URL and file ID.
+2. POST the raw file bytes directly to the upload URL using curl.
+3. files.completeUploadExternal to commit the upload and share it."
+  (unless (file-exists-p file-path)
+    (error "File does not exist: %s" file-path))
+  (let* ((filename (file-name-nondirectory file-path))
+         (size (file-attribute-size (file-attributes file-path)))
+         (curl-bin (executable-find "curl")))
+    (unless curl-bin
+      (error "Taut: `curl' executable not found on system. Please install curl."))
+    
+    (message "Taut: Initiating upload for %s (%d bytes)..." filename size)
+    ;; Step 1: getUploadURLExternal
+    (let* ((get-res (taut-api--request "files.getUploadURLExternal"
+                                       `((filename . ,filename)
+                                         (length . ,size))
+                                       "POST"))
+           (upload-url (cdr (assoc 'upload_url get-res)))
+           (file-id (cdr (assoc 'file_id get-res))))
+      (unless (and upload-url file-id)
+        (error "Taut: Failed to retrieve upload URL or file ID from Slack"))
+      
+      (message "Taut: Sending raw bytes to Slack Storage...")
+      ;; Step 2: Upload file bytes using curl POST/PUT
+      (with-temp-buffer
+        (let ((args (list "-s" "-F" (format "file=@%s" (expand-file-name file-path)) upload-url)))
+          (apply #'call-process curl-bin nil t nil args)))
+      
+      (message "Taut: Completing upload and sharing...")
+      ;; Step 3: completeUploadExternal
+      (let* ((files-param (list (list (cons 'id file-id) (cons 'title filename))))
+             (params `((files . ,files-param)
+                       (channel_id . ,channel-id))))
+        (when thread-ts
+          (setq params (append params `((thread_ts . ,thread-ts)))))
+        (taut-api--request "files.completeUploadExternal" params "POST"))
+      (message "Taut: Successfully uploaded %s!" filename))))
+
 (provide 'taut-api)
 ;;; taut-api.el ends here
