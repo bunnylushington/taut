@@ -464,23 +464,26 @@ Returns non-nil if the buffer was found and focused."
               ;; Get tabs for this frame
               (let ((tabs (frame-parameter frame 'tabs)))
                 (dolist (tab tabs)
-                  ;; A tab is (tab (name . "...") ... (wc-bl ...))
+                  ;; A tab is (tab (name . "...") ... (ws . <window-state>))
                   (when (eq (car tab) 'tab)
                     (let* ((props (cdr tab))
-                           (wc-bl (cdr (assq 'wc-bl props)))
+                           (ws (cdr (assq 'ws props)))
                            (tab-name (cdr (assq 'name props))))
-                      (when (and tab-name (member buf wc-bl))
-                        ;; Switch to the frame
-                        (select-frame-set-input-focus frame)
-                        ;; Switch to the tab
-                        (with-selected-frame frame
-                          (tab-bar-select-tab-by-name tab-name))
-                        ;; Now buffer should be visible in some window of the frame
-                        (let ((win (get-buffer-window buf frame)))
-                          (when win
-                            (select-window win)))
-                        (setq found t)
-                        (throw 'done t))))))))))
+                      (when (and ws tab-name)
+                        (let ((bufs (and (fboundp 'window-state-buffers)
+                                         (window-state-buffers ws))))
+                          (when (member (buffer-name buf) bufs)
+                            ;; Switch to the frame
+                            (select-frame-set-input-focus frame)
+                            ;; Switch to the tab
+                            (with-selected-frame frame
+                              (tab-bar-select-tab-by-name tab-name))
+                            ;; Now buffer should be visible in some window of the frame
+                            (let ((win (get-buffer-window buf frame)))
+                              (when win
+                                (select-window win)))
+                            (setq found t)
+                            (throw 'done t))))))))))))
     found)))
 
 (defun taut-inbox-show ()
