@@ -17,6 +17,7 @@
 (add-to-list 'load-path (file-name-directory (or load-file-name buffer-file-name)))
 
 (require 'taut-model)
+(require 'taut-cache)
 
 (defcustom taut-websocket-load-path "/Users/bunnylushington/.emacs.d/straight/build/websocket/"
   "Directory path to the `websocket' library installation."
@@ -66,28 +67,48 @@
     (setq taut-bot-token (read-string "Enter Slack Token (xoxp-... or xoxb-...): ")))
   
   (message "Taut: Connecting to Slack...")
-  (condition-case err
-      (progn
-        ;; Test Auth and set our user ID
-        (taut-api-test-auth)
-        ;; Clear local data and load real workspace data
-        (taut-model-clear-all)
-        (taut-api-fetch-users)
-        (taut-api-fetch-channels)
-        (taut-api-fetch-starred)
-        (taut-api-fetch-inbox-history)
-        
-        ;; If app token is configured, establish Socket Mode WebSocket connection
-        (when taut-app-token
-          (ignore-errors (taut-socket-connect)))
-        
-        ;; Split and display layout
-        (delete-other-windows)
-        (taut-sidebar-show)
-        (taut-inbox-show)
-        (message "Taut: Successfully connected! Click/RET on a channel to read it."))
-    (error
-     (error "Taut Connection Failed: %s" (error-message-string err)))))
+  
+  ;; Load from SQLite cache if available for instant startup experience
+  (let ((has-cache (and (fboundp 'taut-cache--available-p) (taut-cache--available-p))))
+    (when has-cache
+      (taut-cache-load-all)
+      ;; Display layout instantly while we sync in the background
+      (delete-other-windows)
+      (taut-sidebar-show)
+      (taut-inbox-show)
+      (redisplay t))
+
+    (condition-case err
+        (progn
+          ;; Test Auth and set our user ID
+          (taut-api-test-auth)
+          
+          ;; If we didn't have cache, clear memory. Otherwise, we keep memory
+          ;; and sync updates incrementally!
+          (unless has-cache
+            (taut-model-clear-all))
+          
+          ;; Fetch live workspace updates
+          (taut-api-fetch-users)
+          (taut-api-fetch-channels)
+          (taut-api-fetch-starred)
+          (taut-api-fetch-inbox-history)
+          
+          ;; If app token is configured, establish Socket Mode WebSocket connection
+          (when taut-app-token
+            (ignore-errors (taut-socket-connect)))
+          
+          ;; Split and display layout (if not already displayed)
+          (unless has-cache
+            (delete-other-windows)
+            (taut-sidebar-show)
+            (taut-inbox-show))
+          (message "Taut: Successfully connected! Click/RET on a channel to read it."))
+      (error
+       ;; If background sync failed but we have cache loaded, don't crash
+       (if has-cache
+           (message "Taut Warning: Live sync failed (%s), operating in offline/cached mode." (error-message-string err))
+         (error "Taut Connection Failed: %s" (error-message-string err)))))))
 
 ;;;###autoload
 (defun taut-inbox ()
@@ -185,6 +206,7 @@ This loads the latest source (.el) files to ensure that any edits
 are immediately applied, even if older byte-compiled (.elc) files exist."
   (interactive)
   (let ((modules '("taut-model"
+                   "taut-cache"
                    "taut-api"
                    "taut-sidebar"
                    "taut-inbox"

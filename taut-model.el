@@ -349,11 +349,15 @@ Debounces multiple rapid model changes."
 (defun taut-model-add-user (user)
   "Register USER in the global database."
   (setf (gethash (taut-user-id user) taut-users) user)
+  (when (fboundp 'taut-cache-save-user)
+    (taut-cache-save-user user))
   (taut-model-trigger-update))
 
 (defun taut-model-add-channel (chan)
   "Register channel CHAN in the global database."
   (setf (gethash (taut-channel-id chan) taut-channels) chan)
+  (when (fboundp 'taut-cache-save-channel)
+    (taut-cache-save-channel chan))
   (taut-model-trigger-update))
 
 (defun taut-model-delete-message (ts)
@@ -372,6 +376,8 @@ Debounces multiple rapid model changes."
                    (puthash thread-ts new-replies taut-threads))))
              taut-threads)
     (when found
+      (when (fboundp 'taut-cache-delete-message)
+        (taut-cache-delete-message ts))
       (taut-model-trigger-update))
     found))
 
@@ -411,6 +417,13 @@ If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
             (setq is-duplicate t)
           (setf (gethash chan-id taut-messages) (append msgs (list msg))))))
 
+    ;; Save to SQLite cache if not duplicate
+    (unless is-duplicate
+      (when (fboundp 'taut-cache-save-message)
+        (taut-cache-save-message msg))
+      (when (and thread-ts (not (equal thread-ts msg-ts)) (fboundp 'taut-cache-save-watched-thread))
+        (taut-cache-save-watched-thread thread-ts)))
+
     ;; Update channel unread/mention statistics (only if not a duplicate)
     (unless is-duplicate
       (when (and chan (not (equal (taut-message-user-id msg) taut-current-user-id)))
@@ -421,7 +434,9 @@ If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
           (when (taut-message-is-mention msg)
             (unless (taut-channel-mention-count chan)
               (setf (taut-channel-mention-count chan) 0))
-            (cl-incf (taut-channel-mention-count chan)))))
+            (cl-incf (taut-channel-mention-count chan)))
+          (when (fboundp 'taut-cache-save-channel)
+            (taut-cache-save-channel chan))))
 
       (taut-model-trigger-update))))
 
@@ -431,16 +446,22 @@ If NO-INC-REPLY-P is non-nil, do not increment the root message's reply count."
         (msgs (gethash channel-id taut-messages)))
     (when chan
       (setf (taut-channel-unread-count chan) 0)
-      (setf (taut-channel-mention-count chan) 0))
+      (setf (taut-channel-mention-count chan) 0)
+      (when (fboundp 'taut-cache-save-channel)
+        (taut-cache-save-channel chan)))
     (dolist (msg msgs)
-      (setf (taut-message-is-unread msg) nil))
+      (setf (taut-message-is-unread msg) nil)
+      (when (fboundp 'taut-cache-save-message)
+        (taut-cache-save-message msg)))
     (taut-model-trigger-update)))
 
 (defun taut-model-mark-thread-read (thread-ts)
   "Mark all replies in thread THREAD-TS as read."
   (let ((replies (gethash thread-ts taut-threads)))
     (dolist (msg replies)
-      (setf (taut-message-is-unread msg) nil))
+      (setf (taut-message-is-unread msg) nil)
+      (when (fboundp 'taut-cache-save-message)
+        (taut-cache-save-message msg)))
     (taut-model-trigger-update)))
 
 (defun taut-model-get-starred-messages ()
