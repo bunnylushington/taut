@@ -16,8 +16,10 @@
 (require 'taut-api)
 (declare-function taut-message-reply-normal "taut-compose")
 (declare-function taut-message-reply-quote "taut-compose")
-(declare-function taut-compose-open "taut-compose" (channel-id &optional thread-ts quote-msg edit-ts edit-text))
 (declare-function taut-thread-refresh "taut-thread")
+(declare-function taut-compose-open "taut-compose" (channel-id &optional thread-ts quote-msg edit-ts edit-text))
+
+(defvar taut-current-thread-ts)
 
 (declare-function taut-code-block-dispatch "taut-transient")
 
@@ -1228,6 +1230,26 @@ Uses a premium autocomplete picker mapping emojis and shortcodes."
       (let ((text (taut-message-text msg))
             (thread-ts (taut-message-thread-ts msg)))
         (taut-compose-open chan-id thread-ts nil ts text))))))
+
+;;;###autoload
+(defun taut-message-simulate-typing (username)
+  "Simulate a USERNAME typing in the current channel for testing."
+  (interactive "sUsername to simulate typing: ")
+  (unless taut-current-channel-id
+    (user-error "Not in an active conversation buffer"))
+  (let* ((user (taut-model-get-user-by-username username))
+         (uid (if user (taut-user-id user) (concat "mock_" username)))
+         (is-thread (eq major-mode 'taut-thread-mode))
+         (thread-ts (and is-thread taut-current-thread-ts)))
+    (unless user
+      (taut-model-add-user
+       (make-taut-user
+        :id uid
+        :username username
+        :real-name (concat "Mock " username)
+        :presence 'online)))
+    (taut-model-set-user-typing taut-current-channel-id uid thread-ts)
+    (message "Simulated typing event from %s." username)))
 
 ;; Hook auto-updates
 (add-hook 'taut-model-updated-hook #'taut-message-refresh-all)
