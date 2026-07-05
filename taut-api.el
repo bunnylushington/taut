@@ -127,7 +127,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
     (dolist (m members)
       (let* ((id (cdr (assoc 'id m)))
              (profile (cdr (assoc 'profile m)))
-             (deleted (cdr (assoc 'deleted m))))
+             (deleted (taut-api--bool (cdr (assoc 'deleted m)))))
         (unless deleted
           (taut-model-add-user
            (make-taut-user
@@ -137,6 +137,11 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :presence (if (equal (cdr (assoc 'presence m)) "away") 'away 'online)
             :is-me (equal id taut-current-user-id))))))
   (message "Taut: Synced %d workspace users." (hash-table-count taut-users))))
+
+(defun taut-api--bool (val)
+  "Convert a JSON-parsed boolean VAL to a standard Lisp boolean.
+Parsed JSON booleans are t or :json-false."
+  (and val (not (eq val :json-false))))
 
 (defun taut-api--extract-attachments-text (msg-data)
   "Extract readable text from attachments in MSG-DATA."
@@ -227,9 +232,9 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
          (channels (cdr (assoc 'channels res))))
     (dolist (c channels)
       (let* ((id (cdr (assoc 'id c)))
-             (is-im (cdr (assoc 'is_im c)))
-             (is-mpim (cdr (assoc 'is_mpim c)))
-             (is-private (cdr (assoc 'is_private c)))
+             (is-im (taut-api--bool (cdr (assoc 'is_im c))))
+             (is-mpim (taut-api--bool (cdr (assoc 'is_mpim c))))
+             (is-private (taut-api--bool (cdr (assoc 'is_private c))))
              (unread-count (or (cdr (assoc 'unread_count c)) 0))
              ;; Map name nicely
              (name (or (cond
@@ -246,7 +251,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                     ((or is-im is-mpim) 'dm)
                     (is-private 'private)
                     (t 'public)))
-             (is-member (cdr (assoc 'is_member c))))
+             (is-member (taut-api--bool (cdr (assoc 'is_member c)))))
         (when (or (not taut-only-show-subscribed-channels)
                   is-im
                   is-mpim
@@ -258,7 +263,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :type type
             :unread-count unread-count
             :mention-count (or (cdr (assoc 'mention_count c)) 0)
-            :is-starred (cdr (assoc 'is_starred c))
+            :is-starred (taut-api--bool (cdr (assoc 'is_starred c)))
             :topic (cdr (assoc 'value (cdr (assoc 'topic c))))
             :purpose (cdr (assoc 'value (cdr (assoc 'purpose c))))))))))
   (message "Taut: Synced %d active conversations." (hash-table-count taut-channels)))
@@ -433,8 +438,7 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                    (thread-ts (cdr (assoc 'thread_ts m)))
                    (reply-count (cdr (assoc 'reply_count m)))
                    (reactions (cdr (assoc 'reactions m)))
-                   (starred-val (cdr (assoc 'is_starred m)))
-                   (is-starred (and starred-val (not (eq starred-val :json-false))))
+                   (is-starred (taut-api--bool (cdr (assoc 'is_starred m))))
                    ;; Convert reactions list to taut model representation
                    (model-reactions nil))
               (dolist (r reactions)
@@ -469,13 +473,12 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
     ;; Update root message's reply count from server's root message metadata
     (let* ((root-msg-data (car messages))
            (reply-count (cdr (assoc 'reply_count root-msg-data)))
-           (root-starred-val (cdr (assoc 'is_starred root-msg-data)))
-           (root-is-starred (and root-starred-val (not (eq root-starred-val :json-false))))
+           (root-is-starred (taut-api--bool (cdr (assoc 'is_starred root-msg-data))))
            (root-chan-msgs (gethash channel-id taut-messages))
            (root-msg (cl-find thread-ts root-chan-msgs :key #'taut-message-ts :test #'equal)))
       (when (and root-msg reply-count)
         (setf (taut-message-reply-count root-msg) reply-count))
-      (when (and root-msg root-starred-val)
+      (when root-msg
         (setf (taut-message-is-starred root-msg) root-is-starred)))
     ;; Reset old thread cache, preserving any bookmarked replies
     (let ((starred-replies (cl-remove-if-not #'taut-message-is-starred (gethash thread-ts taut-threads))))
@@ -488,8 +491,7 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
              (full-text (taut-api--get-message-text m raw-text))
              (text (taut-api-unescape-html full-text))
              (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
-             (starred-val (cdr (assoc 'is_starred m)))
-             (is-starred (and starred-val (not (eq starred-val :json-false)))))
+             (is-starred (taut-api--bool (cdr (assoc 'is_starred m)))))
         (when ts
           (taut-model-add-message
            (make-taut-message
