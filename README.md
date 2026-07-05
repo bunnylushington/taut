@@ -94,17 +94,40 @@ machine api.slack.com login app password xapp-YOUR-APP-LEVEL-TOKEN
 ```
 
 ### Emacs Init Configuration
-Add Taut to your `load-path` or use `straight.el` / `use-package`:
+
+Below is the recommended configuration using `use-package` and `straight.el` to load Taut directly from GitHub with standard keybindings, custom cache expiration, and automatic secure credential loading:
+
+```elisp
+(use-package taut
+  :straight (taut :type git :host github :repo "bunnylushington/taut")
+  :demand t
+  :bind (("C-c t c" . taut-connect)
+         ("C-c t i" . taut-inbox)
+         ("C-c t s" . taut-sidebar)
+         ("C-c t q" . taut-quit)
+         ("C-c t r" . taut-reload))
+  :custom
+  (taut-cache-keep-days 180)
+  :config
+  (message "Taut Slack client module loaded successfully!"))
+```
+
+#### Manual Load-Path Alternative
+If you prefer checking out the repository manually, you can use the `:load-path` option:
 
 ```elisp
 (use-package taut
   :load-path "~/projects/taut"
+  :demand t
+  :bind (("C-c t c" . taut-connect)
+         ("C-c t i" . taut-inbox)
+         ("C-c t s" . taut-sidebar)
+         ("C-c t q" . taut-quit)
+         ("C-c t r" . taut-reload))
+  :custom
+  (taut-cache-keep-days 180)
   :config
-  ;; Automatically load credentials on startup
-  (taut-api-load-tokens-from-authinfo)
-
-  ;; Configure sidebar default width (optional)
-  (setq taut-sidebar-width 30))
+  (message "Taut Slack client module loaded successfully!"))
 ```
 
 ---
@@ -120,6 +143,7 @@ Add Taut to your `load-path` or use `straight.el` / `use-package`:
 |:---|:---|
 | `RET` / `Click` | Open the channel, DM, or watched thread under cursor |
 | `TAB` | Toggle collapse / expand state of the section header under cursor |
+| `i` | Switch directly to the Gnus-style Slack Activity (Inbox) buffer |
 | `h` | Toggle the hidden status of the channel at point (moves to HIDDEN section) |
 | `M` | Mark all messages in the channel at point as read |
 | `g` | Force redraw and sync sidebar unreads and stars list |

@@ -73,11 +73,11 @@
   "The main discoverable control center for the Taut Slack client."
   ["💬 Taut: Premium Slack Client"
    ["Workspace & Navigation"
-    ("c" "Connect to Slack"    taut-connect)
-    ("d" "Direct Message (User)" taut-dm-open)
-    ("s" "Show/Focus Sidebar"  taut-sidebar-show)
-    ("i" "Show/Focus Slack Activity" taut-inbox-show)
-    ("q" "Quit / Bury Pane"    quit-window)
+    ("C" "Connect to Slack"    taut-connect)
+    ("U" "Direct Message (User)" taut-dm-open)
+    ("S" "Show/Focus Sidebar"  taut-sidebar-show)
+    ("I" "Show/Focus Slack Activity" taut-inbox-show)
+    ("q" "Quit / Bury Pane"    quit-window :if (lambda () (not (eq major-mode 'taut-thread-mode))))
     ("Q" "Hard Quit Taut"      taut-quit)]
    
    ["Sidebar Actions"
