@@ -154,18 +154,33 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
   (message "Taut: Syncing conversations list...")
   (let* ((types "public_channel,private_channel,im,mpim")
          (params `((types . ,types)
-                   (limit . 100)))
+                   (limit . 1000)))
          (res (condition-case err
-                  (taut-api--request "conversations.list" params "GET")
+                  (taut-api--request "users.conversations" params "GET")
                 (error
-                 (if (string-match-p "missing_scope" (error-message-string err))
-                     (progn
-                       (message "Taut: private_channel scope missing; retrying...")
-                       (taut-api--request "conversations.list"
-                                          '((types . "public_channel,im,mpim")
-                                            (limit . 100))
-                                          "GET"))
-                   (signal (car err) (cdr err))))))
+                 (let ((err-msg (error-message-string err)))
+                   (cond
+                    ;; If missing_scope, retry without private_channel
+                    ((string-match-p "missing_scope" err-msg)
+                     (message "Taut: private_channel scope missing; retrying...")
+                     (taut-api--request "users.conversations"
+                                        '((types . "public_channel,im,mpim")
+                                          (limit . 1000))
+                                        "GET"))
+                    ;; Fallback to conversations.list if users.conversations fails
+                    (t
+                     (message "Taut: users.conversations failed (%s); trying conversations.list..." err-msg)
+                     (condition-case err2
+                         (taut-api--request "conversations.list" params "GET")
+                       (error
+                        (if (string-match-p "missing_scope" (error-message-string err2))
+                            (progn
+                              (message "Taut: private_channel scope missing; retrying...")
+                              (taut-api--request "conversations.list"
+                                                 '((types . "public_channel,im,mpim")
+                                                   (limit . 1000))
+                                                 "GET"))
+                          (signal (car err2) (cdr err2)))))))))))
          (channels (cdr (assoc 'channels res))))
     (dolist (c channels)
       (let* ((id (cdr (assoc 'id c)))
