@@ -191,6 +191,7 @@ are immediately applied, even if older byte-compiled (.elc) files exist."
                    "taut-thread"
                    "taut-socket"
                    "taut-transient"
+                   "taut-compose"
                    "taut"))
         (dir (file-name-directory (or (locate-library "taut") ""))))
     (dolist (module modules)

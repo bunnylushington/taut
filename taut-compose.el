@@ -94,6 +94,7 @@
 
 ;;;; Core Composer Operations
 
+;;;###autoload
 (defun taut-compose-open (channel-id &optional thread-ts quote-msg)
   "Open the `*Taut Compose*` buffer for writing a message."
   (let* ((buf-name "*Taut Compose*")
@@ -124,6 +125,7 @@
     (pop-to-buffer buf action)
     (goto-char (point-max))))
 
+;;;###autoload
 (defun taut-compose-send ()
   "Send the composed message to Slack."
   (interactive)
@@ -162,6 +164,7 @@
       ;; Close the compose window and buffer
       (taut-compose-abort))))
 
+;;;###autoload
 (defun taut-compose-abort ()
   "Abort composition, killing the window and buffer."
   (interactive)
@@ -172,6 +175,7 @@
 
 ;;;; Formatting Helpers
 
+;;;###autoload
 (defun taut-compose-insert-code-block (lang)
   "Insert a Slack code block for LANG."
   (interactive "sLanguage (e.g. python, elisp): ")
@@ -179,11 +183,13 @@
     (insert "```" lang "\n\n```")
     (goto-char (+ start 3 (length lang) 1))))
 
+;;;###autoload
 (defun taut-compose-insert-link (url label)
   "Insert a Slack-formatted link with URL and LABEL."
   (interactive "sURL: \nsLabel: ")
   (insert (format "<%s|%s>" url label)))
 
+;;;###autoload
 (defun taut-compose-insert-user-mention ()
   "Insert a Slack user mention selected via completing-read.
 Mentions are formatted as <@U_ID|username>."
