@@ -489,6 +489,7 @@ history from API first."
           (insert (propertize (format " %s %d " display-emoji (length reactors))
                               'face 'taut-message-reaction
                               'mouse-face 'highlight
+                              'help-echo (taut-message--format-reaction-tooltip reactors)
                               'taut-reaction-emoji emoji
                               'taut-message-id (taut-message-id msg))
                   " ")))
@@ -565,6 +566,7 @@ ROOT-TS is the timestamp of the parent message."
           (insert (propertize (format " %s %d " display-emoji (length reactors))
                               'face 'taut-message-reaction
                               'mouse-face 'highlight
+                              'help-echo (taut-message--format-reaction-tooltip reactors)
                               'taut-reaction-emoji emoji
                               'taut-message-id (taut-message-id reply))
                   " ")))
@@ -618,12 +620,21 @@ ROOT-TS is the timestamp of the parent message."
 
 (defun taut-message--format-ts (ts-str)
   "Format Slack timestamp TS-STR into human readable format.
-Returns a string of \\=`Weekday Month Day, Year, HH:MM:SS\\='."
+Returns a string of `Weekday Month Day, Year, HH:MM:SS'."
   (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
       (let* ((epoch (string-to-number (match-string 1 ts-str)))
              (time-val (seconds-to-time epoch)))
         (replace-regexp-in-string "  " " " (format-time-string "%A %B %e, %Y, %H:%M:%S" time-val)))
     "--:--:--"))
+
+(defun taut-message--format-reaction-tooltip (user-ids)
+  "Format a list of USER-IDS into a hover tooltip string.
+This lists usernames of users who reacted."
+  (let ((names (mapcar (lambda (uid)
+                         (let ((user (taut-model-get-user uid)))
+                           (concat "@" (or (taut-user-username user) uid "unknown"))))
+                       user-ids)))
+    (concat "Reacted by: " (mapconcat #'identity names ", "))))
 
 ;;;; Emoji Translation Support
 
