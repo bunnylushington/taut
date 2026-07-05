@@ -91,6 +91,13 @@
   "Face for highlighting the parent message of the active thread."
   :group 'taut-faces)
 
+(defface taut-message-typing-indicator
+  '((((background dark))  :foreground "#cbd5e1" :slant italic)
+    (((background light)) :foreground "#475569" :slant italic)
+    (t                    :slant italic))
+  "Face for typing indicators."
+  :group 'taut-faces)
+
 (defface taut-message-link
   '((((background dark))  :foreground "#63b3ed" :underline t)
     (((background light)) :foreground "#1264a3" :underline t)
@@ -402,7 +409,33 @@ history from API first."
     (if (null msgs)
         (insert "\n\n  No messages in this conversation yet. Send a message with `r`!\n")
       (dolist (msg msgs)
-        (taut-message--render-message-line msg)))))
+        (taut-message--render-message-line msg)))
+
+    ;; Render typing indicators if any
+    (let ((typing-uids (gethash chan-id taut-typing-users)))
+      (when typing-uids
+        (let ((usernames nil))
+          (dolist (uid typing-uids)
+            (let ((user (taut-model-get-user uid)))
+              (when user
+                (push (or (taut-user-username user) "unknown") usernames))))
+          (when usernames
+            (insert "\n         ")
+            (let ((indicator-start (point)))
+              (insert "💬 ")
+              (cond
+               ((= (length usernames) 1)
+                (insert (propertize (car usernames) 'face 'bold) " is typing..."))
+               ((= (length usernames) 2)
+                (insert (propertize (nth 0 usernames) 'face 'bold)
+                        " and "
+                        (propertize (nth 1 usernames) 'face 'bold)
+                        " are typing..."))
+               (t
+                (insert "several people are typing...")))
+              (add-text-properties indicator-start (point)
+                                   '(face taut-message-typing-indicator)))
+            (insert "\n")))))))
 
 (defun taut-message--render-message-line (msg)
   "Render a single message line MSG."

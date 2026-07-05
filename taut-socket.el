@@ -145,6 +145,14 @@
      ((string= type "hello")
       (message "Taut Socket: Handshake completed successfully. Active stream connected!"))
      
+     ((string= type "user_typing")
+      (let* ((chan-id (or (cdr (assoc 'channel data)) (cdr (assoc 'channel payload))))
+             (user-id (or (cdr (assoc 'user data)) (cdr (assoc 'user payload))))
+             (thread-ts (or (cdr (assoc 'thread_ts data)) (cdr (assoc 'thread_ts payload)))))
+        (message "Taut Socket: Top-level User %s typing in channel %s (thread: %s)" user-id chan-id thread-ts)
+        (when (and chan-id user-id)
+          (taut-model-set-user-typing chan-id user-id thread-ts))))
+
      ((string= type "events_api")
       (let* ((event (cdr (assoc 'event payload)))
              (event-type (cdr (assoc 'type event))))
@@ -220,6 +228,8 @@
                       (thread-ts (cdr (assoc 'thread_ts event))))
                  (message "Taut Socket: Incoming message on channel %s from user %s: %s"
                           chan-id user-id (substring text 0 (min (length text) 40)))
+                 (when (and chan-id user-id)
+                   (taut-model-clear-user-typing chan-id user-id thread-ts))
                  (when ts
                    (let ((is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
                      (taut-model-add-message
@@ -234,6 +244,15 @@
                        :is-unread t
                        :is-mention is-mention)))))))))
          
+         ;; Handle user typing
+         ((string= event-type "user_typing")
+          (let ((chan-id (cdr (assoc 'channel event)))
+                (user-id (cdr (assoc 'user event)))
+                (thread-ts (cdr (assoc 'thread_ts event))))
+            (message "Taut Socket: User %s typing in channel %s (thread: %s)" user-id chan-id thread-ts)
+            (when (and chan-id user-id)
+              (taut-model-set-user-typing chan-id user-id thread-ts))))
+
          ;; Handle added reaction
          ((string= event-type "reaction_added")
           (let* ((item (cdr (assoc 'item event)))

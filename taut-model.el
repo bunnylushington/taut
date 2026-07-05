@@ -95,6 +95,12 @@
 (defvar taut-watched-threads nil
   "List of thread-ts strings that the user is watching/participated in.")
 
+(defvar taut-typing-users (make-hash-table :test 'equal)
+  "Hash table mapping target key (channel-id or thread-ts) to user-ids.")
+
+(defvar taut-typing-timers (make-hash-table :test 'equal)
+  "Hash table mapping (target-key . user-id) to expiration timers.")
+
 ;;;; Hook Definitions
 
 (defvar taut-model-updated-hook nil
@@ -246,6 +252,44 @@ Debounces multiple rapid model changes."
                        (lambda ()
                          (setq taut-model--update-timer nil)
                          (run-hooks 'taut-model-updated-hook))))))
+
+(defun taut-model-set-user-typing (channel-id user-id &optional thread-ts)
+  "Mark USER-ID as typing in CHANNEL-ID or THREAD-TS.
+Starts an expiration timer to automatically clear the indicator."
+  (let* ((target-key (or thread-ts channel-id))
+         (timer-key (cons target-key user-id)))
+    ;; Cancel existing timer if any
+    (let ((old-timer (gethash timer-key taut-typing-timers)))
+      (when old-timer
+        (cancel-timer old-timer)))
+    
+    ;; Add to typing users
+    (let ((users (gethash target-key taut-typing-users)))
+      (unless (member user-id users)
+        (puthash target-key (cons user-id users) taut-typing-users)))
+    
+    ;; Schedule clearing timer
+    (let ((timer (run-with-timer 6.0 nil
+                                 (lambda ()
+                                   (taut-model-clear-user-typing channel-id user-id thread-ts)))))
+      (puthash timer-key timer taut-typing-timers))
+    (taut-model-trigger-update)))
+
+(defun taut-model-clear-user-typing (channel-id user-id &optional thread-ts)
+  "Clear USER-ID from typing list in CHANNEL-ID or THREAD-TS."
+  (let* ((target-key (or thread-ts channel-id))
+         (timer-key (cons target-key user-id)))
+    (let ((timer (gethash timer-key taut-typing-timers)))
+      (when timer
+        (cancel-timer timer)
+        (remhash timer-key taut-typing-timers)))
+    (let ((users (gethash target-key taut-typing-users)))
+      (when (member user-id users)
+        (let ((new-users (delete user-id users)))
+          (if new-users
+              (puthash target-key new-users taut-typing-users)
+            (remhash target-key taut-typing-users)))
+        (taut-model-trigger-update)))))
 
 (defun taut-model-add-user (user)
   "Register USER in the global database."

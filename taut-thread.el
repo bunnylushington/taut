@@ -134,7 +134,33 @@ replies from API first."
         (if (null replies)
             (insert "  No replies in this thread yet. Write a reply with `r`!\n")
           (dolist (reply replies)
-            (taut-message--render-message-line reply)))))))
+            (taut-message--render-message-line reply)))
+
+        ;; Render thread typing indicators if any
+        (let ((typing-uids (gethash thread-ts taut-typing-users)))
+          (when typing-uids
+            (let ((usernames nil))
+              (dolist (uid typing-uids)
+                (let ((user (taut-model-get-user uid)))
+                  (when user
+                    (push (or (taut-user-username user) "unknown") usernames))))
+              (when usernames
+                (insert "\n         ")
+                (let ((indicator-start (point)))
+                  (insert "💬 ")
+                  (cond
+                   ((= (length usernames) 1)
+                    (insert (propertize (car usernames) 'face 'bold) " is typing..."))
+                   ((= (length usernames) 2)
+                    (insert (propertize (nth 0 usernames) 'face 'bold)
+                            " and "
+                            (propertize (nth 1 usernames) 'face 'bold)
+                            " are typing..."))
+                   (t
+                    (insert "several people are typing...")))
+                  (add-text-properties indicator-start (point)
+                                       '(face taut-message-typing-indicator)))
+                (insert "\n")))))))))
 
 ;;;; Actions & Window Layout Management
 
