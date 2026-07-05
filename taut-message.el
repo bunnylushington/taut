@@ -740,7 +740,10 @@ character or end of string."
 (defun taut-emoji-translate (name)
   "Translate Slack emoji shortcode NAME to unicode.
 Allows both raw shortcode names and bracketed format like \":raised_hands:\"."
-  (let* ((name (or name ""))
+  (let* ((name (cond
+                ((symbolp name) (symbol-name name))
+                ((stringp name) name)
+                (t "")))
          (clean-name (if (and (string-prefix-p ":" name) (string-suffix-p ":" name))
                         (substring name 1 -1)
                       name))
