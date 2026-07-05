@@ -94,22 +94,21 @@
   "The current active filter in the Taut Inbox.
 Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 
-(defvar taut-inbox-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") #'taut-inbox-activate)
-    (define-key map (kbd "<mouse-1>") #'taut-inbox-mouse-activate)
-    (define-key map (kbd "d") #'taut-inbox-mark-read)
-    (define-key map (kbd "e") #'taut-inbox-mark-read) ; Alternative archive/dismiss key
-    (define-key map (kbd "g") #'taut-inbox-refresh)
-    (define-key map (kbd "q") #'taut-inbox-bury)
-    (define-key map (kbd "a") #'taut-inbox-filter-all)
-    (define-key map (kbd "u") #'taut-inbox-filter-unreads)
-    (define-key map (kbd "D") #'taut-inbox-filter-dms)
-    (define-key map (kbd "m") #'taut-inbox-filter-mentions)
-    (define-key map (kbd "t") #'taut-inbox-filter-threads)
-    (define-key map (kbd "?") #'taut-dispatch)
-    map)
+(defvar taut-inbox-mode-map (make-sparse-keymap)
   "Keymap for `taut-inbox-mode`.")
+
+(define-key taut-inbox-mode-map (kbd "RET") #'taut-inbox-activate)
+(define-key taut-inbox-mode-map (kbd "<mouse-1>") #'taut-inbox-mouse-activate)
+(define-key taut-inbox-mode-map (kbd "d") #'taut-inbox-mark-read)
+(define-key taut-inbox-mode-map (kbd "e") #'taut-inbox-mark-read) ; Alternative archive/dismiss key
+(define-key taut-inbox-mode-map (kbd "g") #'taut-inbox-refresh)
+(define-key taut-inbox-mode-map (kbd "q") #'taut-inbox-bury)
+(define-key taut-inbox-mode-map (kbd "a") #'taut-inbox-filter-all)
+(define-key taut-inbox-mode-map (kbd "u") #'taut-inbox-filter-unreads)
+(define-key taut-inbox-mode-map (kbd "D") #'taut-inbox-filter-dms)
+(define-key taut-inbox-mode-map (kbd "m") #'taut-inbox-filter-mentions)
+(define-key taut-inbox-mode-map (kbd "t") #'taut-inbox-filter-threads)
+(define-key taut-inbox-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-inbox-mode special-mode "Taut-Inbox"
   "Major mode for the Taut unified Inbox.
@@ -158,9 +157,13 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 
 (defun taut-inbox--render-feed ()
   "Query the model and render inbox rows into the current buffer."
+  (unless taut-inbox-filter
+    (setq taut-inbox-filter 'all))
   (taut-inbox--render-header)
   
-  (let* ((all-items (taut-model-get-activity-items))
+  (let* ((all-items (if (fboundp 'taut-model-get-activity-items)
+                        (taut-model-get-activity-items)
+                      (taut-model-get-inbox-items)))
          ;; Filter items based on the active filter state
          (filtered-items
           (cl-remove-if-not
