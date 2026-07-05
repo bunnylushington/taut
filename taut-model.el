@@ -236,42 +236,58 @@ Unified Inbox contains:
 
 (defun taut-model-get-activity-items ()
   "Query and construct a list of active and recent `taut-inbox-item' objects.
-Includes both unread and read items across DMs, Mentions, and Threads."
+Includes unread and read items across channels, DMs, mentions, and threads."
   (let (items)
-    ;; 1 & 2: DMs and Channel Mentions
+    ;; 1 & 2: DMs, Mentions, and Unread Channel Messages
     (maphash
      (lambda (chan-id chan)
        (let ((msgs (gethash chan-id taut-messages)))
          (dolist (msg msgs)
            ;; Skip messages sent by me
            (unless (equal (taut-message-user-id msg) taut-current-user-id)
-             (cond
-              ;; If it's a DM, any message goes to activity
-              ((eq (taut-channel-type chan) 'dm)
-               (push (make-taut-inbox-item
-                      :id (taut-message-ts msg)
-                      :type 'dm
-                      :channel-id chan-id
-                      :message-id (taut-message-id msg)
-                      :user-id (taut-message-user-id msg)
-                      :title (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
-                      :snippet (taut-message-text msg)
-                      :ts (taut-message-ts msg)
-                      :is-read (not (taut-message-is-unread msg)))
-                     items))
-              ;; If it's a channel mention
-              ((taut-message-is-mention msg)
-               (push (make-taut-inbox-item
-                      :id (taut-message-ts msg)
-                      :type 'mention
-                      :channel-id chan-id
-                      :message-id (taut-message-id msg)
-                      :user-id (taut-message-user-id msg)
-                      :title (format "#%s" (or (taut-channel-name chan) "unknown"))
-                      :snippet (taut-message-text msg)
-                      :ts (taut-message-ts msg)
-                      :is-read (not (taut-message-is-unread msg)))
-                     items)))))))
+             (let ((is-unread (taut-message-is-unread msg))
+                   (is-mention (taut-message-is-mention msg))
+                   (is-dm (eq (taut-channel-type chan) 'dm)))
+               (cond
+                ;; Direct Messages: include all (both read and unread)
+                (is-dm
+                 (push (make-taut-inbox-item
+                        :id (taut-message-ts msg)
+                        :type 'dm
+                        :channel-id chan-id
+                        :message-id (taut-message-id msg)
+                        :user-id (taut-message-user-id msg)
+                        :title (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
+                        :snippet (taut-message-text msg)
+                        :ts (taut-message-ts msg)
+                        :is-read (not is-unread))
+                       items))
+                ;; Mentions: include all (both read and unread)
+                (is-mention
+                 (push (make-taut-inbox-item
+                        :id (taut-message-ts msg)
+                        :type 'mention
+                        :channel-id chan-id
+                        :message-id (taut-message-id msg)
+                        :user-id (taut-message-user-id msg)
+                        :title (format "#%s" (or (taut-channel-name chan) "unknown"))
+                        :snippet (taut-message-text msg)
+                        :ts (taut-message-ts msg)
+                        :is-read (not is-unread))
+                       items))
+                ;; Normal Channel Messages: include ONLY if unread
+                (is-unread
+                 (push (make-taut-inbox-item
+                        :id (taut-message-ts msg)
+                        :type 'channel
+                        :channel-id chan-id
+                        :message-id (taut-message-id msg)
+                        :user-id (taut-message-user-id msg)
+                        :title (format "#%s" (or (taut-channel-name chan) "unknown"))
+                        :snippet (taut-message-text msg)
+                        :ts (taut-message-ts msg)
+                        :is-read nil)
+                       items))))))))
      taut-channels)
 
     ;; 3: Thread updates

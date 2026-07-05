@@ -233,6 +233,26 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
     (error
      (message "Taut: Starred sync failed: %s" (error-message-string err)))))
 
+(defun taut-api-fetch-inbox-history ()
+  "Pre-fetch message history for channels and DMs relevant to the Inbox.
+This includes any channel with unread messages or mentions, and recent DMs."
+  (interactive)
+  (message "Taut: Pre-fetching inbox activity history...")
+  (let ((channels (taut-model-get-channels-list))
+        (fetched-count 0))
+    (dolist (chan channels)
+      (let* ((id (taut-channel-id chan))
+             (type (taut-channel-type chan))
+             (unreads (or (taut-channel-unread-count chan) 0))
+             (mentions (or (taut-channel-mention-count chan) 0)))
+        (when (or (> unreads 0)
+                  (> mentions 0)
+                  (eq type 'dm))
+          (ignore-errors
+            (taut-api-fetch-history id 20)
+            (cl-incf fetched-count)))))
+    (message "Taut: Pre-fetched history for %d active conversations." fetched-count)))
+
 (defun taut-api-unescape-html (text)
   "Replace common HTML entities in TEXT with their literal characters."
   (if text

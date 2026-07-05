@@ -67,6 +67,13 @@
   "Face for [Thread] labels."
   :group 'taut-faces)
 
+(defface taut-inbox-type-channel
+  '((((background dark))  :background "#4a154b" :foreground "#ffffff" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (((background light)) :background "#f4ecef" :foreground "#4a154b" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (t                    :background "#4a154b" :foreground "#ffffff" :weight bold :box (:line-width (2 . -1) :style flat-button)))
+  "Face for [Channel] labels."
+  :group 'taut-faces)
+
 (defface taut-inbox-filter-active
   '((((background dark))  :foreground "#ffffff" :weight bold :underline t)
     (((background light)) :foreground "#1d1c1d" :weight bold :underline t)
@@ -218,7 +225,9 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
          (badge-part (cond
                       ((eq type 'dm)             (propertize " 👤 DM " 'face 'taut-inbox-type-dm))
                       ((eq type 'mention)        (propertize " @ MENTION " 'face 'taut-inbox-type-mention))
-                      ((eq type 'thread-update)  (propertize " 💬 THREAD " 'face 'taut-inbox-type-thread))))
+                      ((eq type 'thread-update)  (propertize " 💬 THREAD " 'face 'taut-inbox-type-thread))
+                      ((eq type 'channel)        (propertize " ♯ CHANNEL " 'face 'taut-inbox-type-channel))
+                      (t                         (propertize " 💬 CHAT " 'face 'taut-inbox-type-channel))))
          ;; Sender user name
          (sender (taut-model-get-user (taut-inbox-item-user-id item)))
          (sender-display (if sender

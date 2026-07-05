@@ -75,6 +75,7 @@
         (taut-api-fetch-users)
         (taut-api-fetch-channels)
         (taut-api-fetch-starred)
+        (taut-api-fetch-inbox-history)
         
         ;; If app token is configured, establish Socket Mode WebSocket connection
         (when taut-app-token
