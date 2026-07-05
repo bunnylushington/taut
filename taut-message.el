@@ -1,8 +1,8 @@
 ;;; taut-message.el --- Rich Conversation Buffer for Taut -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Google DeepMind
+;; Copyright (C) 2026 Bunny Lushington
 
-;; Author: Antigravity
+;; Author: bunny@bapi.us
 ;; Keywords: comm, slack
 
 ;;; Commentary:

@@ -1,8 +1,8 @@
 ;;; taut.el --- Modern, elegant Slack client entry -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Google DeepMind
+;; Copyright (C) 2026 Bunny Lushington
 
-;; Author: Antigravity
+;; Author: bunny@bapi.us
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: comm, slack

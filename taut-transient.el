@@ -1,8 +1,8 @@
 ;;; taut-transient.el --- Transient Dispatcher for Taut -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Google DeepMind
+;; Copyright (C) 2026 Bunny Lushington
 
-;; Author: Antigravity
+;; Author: bunny@bapi.us
 ;; Keywords: comm, slack
 
 ;;; Commentary:
