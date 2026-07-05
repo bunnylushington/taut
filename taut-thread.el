@@ -138,8 +138,10 @@ replies from API first."
 
 ;;;; Actions & Window Layout Management
 
-(defun taut-thread-open (thread-ts)
-  "Open the thread discussion buffer for THREAD-TS in a split window on the right."
+(defun taut-thread-open (thread-ts &optional channel-id)
+  "Open the thread discussion buffer for THREAD-TS in a split window on the right.
+If CHANNEL-ID is provided, use it directly. Otherwise, attempt to resolve it
+using local cache fallback strategies."
   (let* ((buf-name "*Taut Thread*")
          (buf (get-buffer-create buf-name)))
     (with-current-buffer buf
@@ -147,11 +149,18 @@ replies from API first."
         (taut-thread-mode))
       (setq taut-current-thread-ts thread-ts)
       ;; Query associated channel and fetch latest thread replies if online
-      (let ((chan-id nil))
-        (maphash (lambda (cid msgs)
-                   (when (cl-some (lambda (msg) (equal (taut-message-ts msg) thread-ts)) msgs)
-                     (setq chan-id cid)))
-                 taut-messages)
+      (let ((chan-id channel-id))
+        (unless chan-id
+          ;; Fallback 1: search replies hash table for any message with this thread-ts
+          (let ((replies (gethash thread-ts taut-threads)))
+            (when replies
+              (setq chan-id (taut-message-channel-id (car replies))))))
+        (unless chan-id
+          ;; Fallback 2: search taut-messages
+          (maphash (lambda (cid msgs)
+                     (when (cl-some (lambda (msg) (equal (taut-message-ts msg) thread-ts)) msgs)
+                       (setq chan-id cid)))
+                   taut-messages))
         (when chan-id
           (setq taut-current-channel-id chan-id))
         (when (and chan-id (boundp 'taut-bot-token) taut-bot-token)

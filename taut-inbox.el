@@ -17,6 +17,8 @@
 (defvar taut-use-icons)
 
 (declare-function taut-dispatch "taut-transient")
+(declare-function taut-message-open "taut-message" (chan-id &optional other-window))
+(declare-function taut-thread-open "taut-thread" (thread-ts &optional channel-id))
 
 ;;;; Faces
 
@@ -369,7 +371,7 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
           ;; Mark thread read first and open thread
           (taut-model-mark-thread-read thread-ts)
           (if (fboundp 'taut-thread-open)
-              (funcall 'taut-thread-open thread-ts)
+              (funcall 'taut-thread-open thread-ts chan-id)
             (message "Opening thread %s" thread-ts)))
          (t
           ;; DM or Mention: mark channel read and open channel buffer

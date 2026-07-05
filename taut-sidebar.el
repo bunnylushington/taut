@@ -333,7 +333,8 @@
           (let* ((replies (gethash th-ts taut-threads))
                  (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
                  (has-unreads (> unread-reply-count 0))
-                 (line-start (point)))
+                 (line-start (point))
+                 (chan-id (and replies (taut-message-channel-id (car replies)))))
             (insert "  " (if has-unreads "● " (taut-sidebar--get-icon 'thread)))
             (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
               (insert (propertize (format "Thread %s" ts-suffix)
@@ -343,6 +344,7 @@
                                   'face 'taut-sidebar-badge-unread)))
             (add-text-properties line-start (point)
                                  (list 'taut-thread-ts th-ts
+                                       'taut-channel-id chan-id
                                        'mouse-face 'highlight))
             (insert "\n")))))
     (insert "\n")))
@@ -401,7 +403,7 @@
      (chan-id
       (taut-sidebar-open-channel chan-id))
      (thread-ts
-      (taut-sidebar-open-thread thread-ts))
+      (taut-sidebar-open-thread thread-ts chan-id))
      (section
       (taut-sidebar-toggle-section section)))))
 
@@ -490,10 +492,10 @@
       (funcall 'taut-message-open chan-id)
     (message "Opening channel %s (taut-message-open not loaded yet)" chan-id)))
 
-(defun taut-sidebar-open-thread (thread-ts)
+(defun taut-sidebar-open-thread (thread-ts &optional channel-id)
   "Open thread discussion buffer for THREAD-TS."
   (if (fboundp 'taut-thread-open)
-      (funcall 'taut-thread-open thread-ts)
+      (funcall 'taut-thread-open thread-ts channel-id)
     (message "Opening thread %s (taut-thread-open not loaded yet)" thread-ts)))
 
 ;;;; Sidebar Show / Management

@@ -556,10 +556,33 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
            (root-is-starred (taut-api--bool (cdr (assoc 'is_starred root-msg-data))))
            (root-chan-msgs (gethash channel-id taut-messages))
            (root-msg (cl-find thread-ts root-chan-msgs :key #'taut-message-ts :test #'equal)))
-      (when (and root-msg reply-count)
-        (setf (taut-message-reply-count root-msg) reply-count))
-      (when root-msg
-        (setf (taut-message-is-starred root-msg) root-is-starred)))
+      (if root-msg
+          (progn
+            (when reply-count
+              (setf (taut-message-reply-count root-msg) reply-count))
+            (setf (taut-message-is-starred root-msg) root-is-starred))
+        ;; If the root message is not in our channel history cache, construct and add it
+        (when root-msg-data
+          (let* ((ts (cdr (assoc 'ts root-msg-data)))
+                 (user-id (or (cdr (assoc 'user root-msg-data)) (cdr (assoc 'bot_id root-msg-data)) "unknown"))
+                 (raw-text (or (cdr (assoc 'text root-msg-data)) ""))
+                 (full-text (taut-api--get-message-text root-msg-data raw-text))
+                 (text (taut-api-unescape-html full-text))
+                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
+            (when ts
+              (taut-model-add-message
+               (make-taut-message
+                :id (concat "msg_" ts)
+                :channel-id channel-id
+                :user-id user-id
+                :text text
+                :ts ts
+                :thread-ts nil
+                :reply-count (or reply-count 0)
+                :is-unread nil
+                :is-mention is-mention
+                :is-starred root-is-starred)
+               t))))))
     ;; Reset old thread cache, preserving any bookmarked replies
     (let ((starred-replies (cl-remove-if-not #'taut-message-is-starred (gethash thread-ts taut-threads))))
       (setf (gethash thread-ts taut-threads) starred-replies))
