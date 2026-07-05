@@ -208,12 +208,44 @@
       (call-interactively #'taut-code-block-copy)
     (message "No code block under cursor.")))
 
-(defun taut-message-save-at-point ()
-  "Save the code block at point, if any."
+(defun taut-message-download-file (url name)
+  "Prompt the user for a path and download file from URL named NAME."
+  (let* ((default-path (expand-file-name (or name "downloaded_file")))
+         (dest-path (read-file-name "Save file to: " nil default-path)))
+    (when dest-path
+      (taut-api-download-file url dest-path)
+      (when (y-or-n-p (format "Open %s in Emacs? " (file-name-nondirectory dest-path)))
+        (find-file dest-path)))))
+
+(defun taut-message-handle-file-link ()
+  "Handle interactive selection on clicking a file link."
   (interactive)
-  (if (get-text-property (point) 'taut-code-block-content)
-      (call-interactively #'taut-code-block-save)
-    (message "No code block under cursor.")))
+  (let* ((url (get-text-property (point) 'taut-file-url))
+         (name (get-text-property (point) 'taut-file-name))
+         (browser-url (or (get-text-property (point) 'taut-file-browser-url) url)))
+    (if (not url)
+        (message "No file link under point.")
+      (let* ((choices '("Download file locally" "Open in Browser"))
+             (choice (completing-read (format "Action for %s: " (or name "file"))
+                                      choices nil t)))
+        (cond
+         ((string= choice "Download file locally")
+          (taut-message-download-file url name))
+         ((string= choice "Open in Browser")
+          (browse-url browser-url)))))))
+
+(defun taut-message-save-at-point ()
+  "Save the code block or download the file at point, if any."
+  (interactive)
+  (cond
+   ((get-text-property (point) 'taut-code-block-content)
+    (call-interactively #'taut-code-block-save))
+   ((get-text-property (point) 'taut-file-url)
+    (let ((url (get-text-property (point) 'taut-file-url))
+          (name (get-text-property (point) 'taut-file-name)))
+      (taut-message-download-file url name)))
+   (t
+    (message "No code block or file link under cursor."))))
 
 ;;;; Major Mode Definition
 
@@ -653,7 +685,7 @@ Allows both raw shortcode names and bracketed format like \":raised_hands:\"."
 Insert at point with premium faces and interactive links."
   (let* ((text (taut-emoticon-translate-string (or text "")))
          (start 0))
-    (while (string-match "\\(\\*\\([^*]+\\)\\*\\)\\|\\(_\\([^_]+\\)_\\)\\|\\(~\\([^~]+\\)~\\)\\|\\(`\\([^`]+\\)`\\)\\|\\(<@\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<#\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<\\(https?://[^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(:\\([a-zA-Z0-9_+-]+\\):\\)" text start)
+    (while (string-match "\\(\\*\\([^*]+\\)\\*\\)\\|\\(_\\([^_]+\\)_\\)\\|\\(~\\([^~]+\\)~\\)\\|\\(`\\([^`]+\\)`\\)\\|\\(<@\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<#\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(<\\(\\(?:https?\\|taut-file\\)://[^>|]+\\)\\(|\\([^>]+\\)\\)?>\\)\\|\\(:\\([a-zA-Z0-9_+-]+\\):\\)" text start)
       (let ((match-start (match-beginning 0))
             (match-end (match-end 0)))
         ;; Insert preceding plain text
@@ -737,18 +769,43 @@ Insert at point with premium faces and interactive links."
                                           (define-key map (kbd "RET") (lambda () (interactive) (taut-message-open cid)))
                                           (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (taut-message-open cid)))
                                           map)))))
-         ;; <https://...|label> general link (interactive to open URL)
-         ((match-string 18 text)
-          (let* ((url (match-string 18 text))
-                 (label (or (match-string 20 text) url)))
-            (insert (propertize label
-                                'face 'taut-message-link
-                                'mouse-face 'highlight
-                                'help-echo (format "Click/RET to open link: %s" url)
-                                'keymap (let ((map (make-sparse-keymap)))
-                                          (define-key map (kbd "RET") (lambda () (interactive) (browse-url url)))
-                                          (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (browse-url url)))
-                                          map)))))
+          ;; <https://...|label> general link (interactive to open URL)
+          ((match-string 18 text)
+           (let* ((url (match-string 18 text))
+                  (label (or (match-string 20 text) url)))
+             (if (string-prefix-p "taut-file://" url)
+                 (let* ((orig-url (replace-regexp-in-string "^taut-file://" "https://" url))
+                        (name (when (string-match "[?&]taut_name=\\([^&]+\\)" orig-url)
+                                (url-unhex-string (match-string 1 orig-url))))
+                        (browser-url (when (string-match "[?&]browser_url=\\([^&]+\\)" orig-url)
+                                       (url-unhex-string (match-string 1 orig-url))))
+                        (clean-url (let ((u orig-url))
+                                     (setq u (replace-regexp-in-string "[?&]taut_name=[^&]+" "" u))
+                                     (setq u (replace-regexp-in-string "[?&]browser_url=[^&]+" "" u))
+                                     u)))
+                   (insert (propertize label
+                                       'face 'taut-message-link
+                                       'mouse-face 'highlight
+                                       'help-echo (format "Click/RET to download/open: %s" (or name "file"))
+                                       'taut-file-url clean-url
+                                       'taut-file-name name
+                                       'taut-file-browser-url browser-url
+                                       'keymap (let ((map (make-sparse-keymap)))
+                                                 (define-key map (kbd "RET") #'taut-message-handle-file-link)
+                                                 (define-key map (kbd "<mouse-1>")
+                                                   (lambda (event)
+                                                     (interactive "e")
+                                                     (posn-set-point (event-end event))
+                                                     (taut-message-handle-file-link)))
+                                                 map))))
+               (insert (propertize label
+                                   'face 'taut-message-link
+                                   'mouse-face 'highlight
+                                   'help-echo (format "Click/RET to open link: %s" url)
+                                   'keymap (let ((map (make-sparse-keymap)))
+                                             (define-key map (kbd "RET") (lambda () (interactive) (browse-url url)))
+                                             (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (browse-url url)))
+                                             map))))))
          ;; :emoji:
          ((match-string 22 text)
           (let ((emoji-name (match-string 22 text)))

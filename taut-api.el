@@ -248,10 +248,21 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
   (let ((files (cdr (assoc 'files event)))
         (file-links nil))
     (dolist (f files)
-      (let ((name (or (cdr (assoc 'title f)) (cdr (assoc 'name f)) "file"))
-            (url (or (cdr (assoc 'permalink f)) (cdr (assoc 'url_private f)))))
-        (if url
-            (push (format "📎 *[Shared File]*: _%s_ (<%s|View on Slack>)" name url) file-links)
+      (let* ((name (or (cdr (assoc 'title f)) (cdr (assoc 'name f)) "file"))
+             (download-url (or (cdr (assoc 'url_private_download f))
+                               (cdr (assoc 'url_private f))
+                               (cdr (assoc 'permalink f))))
+             (browser-url (or (cdr (assoc 'permalink f))
+                              (cdr (assoc 'url_private f)))))
+        (if download-url
+            (let* ((name-hex (url-hexify-string name))
+                   (browser-hex (url-hexify-string (or browser-url "")))
+                   (has-query (string-match-p "\\?" download-url))
+                   (taut-url (concat (replace-regexp-in-string "^https://" "taut-file://" download-url)
+                                     (if has-query "&" "?")
+                                     "taut_name=" name-hex
+                                     "&browser_url=" browser-hex)))
+              (push (format "📎 *[Shared File]*: _%s_ (<%s|Download File>)" name taut-url) file-links))
           (push (format "📎 *[Shared File]*: _%s_" name) file-links))))
     (if file-links
         (let ((files-str (mapconcat #'identity (nreverse file-links) "\n")))
@@ -467,6 +478,24 @@ Implements Slack's modern 3-step files upload flow:
           (setq params (append params `((thread_ts . ,thread-ts)))))
         (taut-api--request "files.completeUploadExternal" params "POST"))
       (message "Taut: Successfully uploaded %s!" filename))))
+
+(defun taut-api-download-file (url local-path)
+  "Download file from Slack private URL to LOCAL-PATH using curl.
+Uses the active bearer token for authorization."
+  (let ((token taut-bot-token)
+        (curl-bin (executable-find "curl")))
+    (unless token
+      (error "Taut: Token not configured"))
+    (unless curl-bin
+      (error "Taut: `curl' executable not found"))
+    (message "Taut: Downloading file to %s..." local-path)
+    (with-temp-buffer
+      (let ((args (list "-s" "-L"
+                        "-H" (concat "Authorization: Bearer " token)
+                        "-o" (expand-file-name local-path)
+                        url)))
+        (apply #'call-process curl-bin nil t nil args)))
+    (message "Taut: Successfully downloaded file to %s" local-path)))
 
 (provide 'taut-api)
 ;;; taut-api.el ends here
