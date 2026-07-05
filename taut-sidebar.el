@@ -15,6 +15,7 @@
 (require 'taut-model)
 
 (declare-function taut-dispatch "taut-transient")
+(declare-function taut-inbox-show "taut-inbox")
 
 ;;;; Faces
 
@@ -98,6 +99,7 @@
     (define-key map (kbd "M") #'taut-sidebar-mark-all-read)
     (define-key map (kbd "h") #'taut-sidebar-toggle-channel-hidden)
     (define-key map (kbd "q") #'taut-sidebar-bury)
+    (define-key map (kbd "i") #'taut-inbox-show)
     (define-key map (kbd "?") #'taut-dispatch)
     map)
   "Keymap for `taut-sidebar-mode`.")
@@ -184,10 +186,35 @@
           (taut-sidebar--render-sections)
           (goto-char (min old-point (point-max))))))))
 
+(defun taut-sidebar--get-inbox-unread-count ()
+  "Count total unread items in the activity feed."
+  (if (fboundp 'taut-model-get-activity-items)
+      (let ((items (taut-model-get-activity-items)))
+        (cl-count-if-not #'taut-inbox-item-is-read items))
+    0))
+
 (defun taut-sidebar--render-sections ()
   "Render all sections to the current buffer."
   ;; Add a line or two of space at the top of the sidebar
   (insert "\n\n")
+  ;; Render the Slack Activity shortcut with unread badge at the top
+  (let* ((inbox-unread-count (taut-sidebar--get-inbox-unread-count))
+         (has-unreads (> inbox-unread-count 0))
+         (face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))
+         (icon (or (and taut-use-icons (fboundp 'nerd-icons-octicon)
+                        (concat (nerd-icons-octicon "nf-oct-inbox" :face face) " "))
+                   (and taut-use-icons (fboundp 'all-the-icons-octicon)
+                        (concat (all-the-icons-octicon "inbox" :face face) " "))
+                   "📥 ")))
+    (let ((start (point)))
+      (insert "  " icon (propertize "Slack Activity" 'face face))
+      (when has-unreads
+        (insert (propertize (format " (%d)" inbox-unread-count)
+                            'face 'taut-sidebar-badge-unread)))
+      (add-text-properties start (point)
+                           (list 'taut-sidebar-action #'taut-inbox-show
+                                 'mouse-face 'highlight)))
+    (insert "\n\n"))
   (let ((channels (taut-model-get-channels-list))
         starred public-chans dms hidden-chans)
     
@@ -364,8 +391,11 @@
   (let ((chan-id (get-text-property (point) 'taut-channel-id))
         (thread-ts (get-text-property (point) 'taut-thread-ts))
         (bookmark-msg (get-text-property (point) 'taut-bookmark-msg))
-        (section (get-text-property (point) 'taut-section)))
+        (section (get-text-property (point) 'taut-section))
+        (action (get-text-property (point) 'taut-sidebar-action)))
     (cond
+     (action
+      (call-interactively action))
      (bookmark-msg
       (taut-sidebar-open-bookmark bookmark-msg))
      (chan-id
