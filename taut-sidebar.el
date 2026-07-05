@@ -161,22 +161,44 @@
           (taut-sidebar--render-channel-line chan))))
     (insert "\n")))
 
+(defun taut-sidebar--resolve-display-names (chan-name)
+  "Resolve comma-separated usernames to real names if available."
+  (let* ((parts (split-string chan-name ",\\s-*"))
+         (resolved (mapcar (lambda (part)
+                             (let ((user (taut-model-get-user-by-username part)))
+                               (if user
+                                   (taut-user-real-name user)
+                                 part)))
+                           parts)))
+    resolved))
+
 (defun taut-sidebar--render-channel-line (chan)
   "Insert a stylized line representing CHAN in the sidebar."
   (let* ((has-unreads (> (taut-channel-unread-count chan) 0))
          (has-mentions (> (taut-channel-mention-count chan) 0))
          (channel-face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))
          (chan-name (or (taut-channel-name chan) "unknown"))
-         (name-prefix (if (eq (taut-channel-type chan) 'dm)
-                          (let ((user (taut-model-get-user-by-username chan-name)))
-                            (if user
-                                (taut-sidebar--user-status-indicator user)
-                              "👥 "))
-                        "# "))
-         (chan-line-start (point)))
+         (chan-line-start (point))
+         (resolved-names (taut-sidebar--resolve-display-names chan-name))
+         (is-dm (eq (taut-channel-type chan) 'dm)))
     
-    (insert "  " name-prefix)
-    (insert (propertize chan-name 'face channel-face))
+    (if (and is-dm (> (length resolved-names) 1))
+        ;; Multi-participant DM: Render names separated by newlines.
+        (progn
+          (insert "  👥 ")
+          (insert (propertize (car resolved-names) 'face channel-face))
+          (dolist (name (cdr resolved-names))
+            (insert "\n     ") ; Indented to line up with text under "👥 "
+            (insert (propertize name 'face channel-face))))
+      ;; Single participant DM or standard channel
+      (let ((name-prefix (if is-dm
+                             (let ((user (taut-model-get-user-by-username chan-name)))
+                               (if user
+                                   (taut-sidebar--user-status-indicator user)
+                                 "👥 "))
+                           "# ")))
+        (insert "  " name-prefix)
+        (insert (propertize (car resolved-names) 'face channel-face))))
     
     ;; Append Badge if there are unreads/mentions
     (cond
