@@ -182,7 +182,33 @@
                      (when updated
                        (taut-model-trigger-update))))))
               
-              ;; 2. Skip boring system messages
+              ;; 2. Handle deleted messages
+              ((string= subtype "message_deleted")
+               (let* ((ts (or (cdr (assoc 'deleted_ts event))
+                              (cdr (assoc 'ts event))))
+                      (updated nil))
+                 (message "Taut Socket: Message deleted on channel %s, ts: %s" chan-id ts)
+                 (when ts
+                   ;; Scan main channel messages
+                   (let ((msgs (gethash chan-id taut-messages)))
+                     (when msgs
+                       (let ((m (cl-find ts msgs :key #'taut-message-ts :test #'equal)))
+                         (when m
+                           (setf (taut-message-text m) "_This message was deleted._")
+                           (setq updated t)))))
+                   ;; Scan threads
+                   (unless updated
+                     (maphash (lambda (_th-ts replies)
+                                (unless updated
+                                  (let ((m (cl-find ts replies :key #'taut-message-ts :test #'equal)))
+                                    (when m
+                                      (setf (taut-message-text m) "_This message was deleted._")
+                                      (setq updated t)))))
+                              taut-threads))
+                   (when updated
+                     (taut-model-trigger-update)))))
+              
+              ;; 3. Skip boring system messages
               ((member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))
                (message "Taut Socket: Skipped boring system message subtype: %s" subtype))
               
