@@ -68,6 +68,8 @@ Creates the necessary tables if they do not exist."
                          topic TEXT,
                          purpose TEXT
                        )")
+      (ignore-errors
+        (sqlite-execute taut-cache--db "ALTER TABLE channels ADD COLUMN is_hidden INTEGER DEFAULT 0"))
       (sqlite-execute taut-cache--db
                       "CREATE TABLE IF NOT EXISTS messages (
                          id TEXT PRIMARY KEY,
@@ -112,14 +114,15 @@ Creates the necessary tables if they do not exist."
   (let ((db (taut-cache--get-db)))
     (when db
       (sqlite-execute db
-                      "INSERT OR REPLACE INTO channels (id, name, type, unread_count, mention_count, is_starred, topic, purpose)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                      "INSERT OR REPLACE INTO channels (id, name, type, unread_count, mention_count, is_starred, is_hidden, topic, purpose)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                       (list (taut-channel-id chan)
                             (taut-channel-name chan)
                             (symbol-name (or (taut-channel-type chan) 'public))
                             (or (taut-channel-unread-count chan) 0)
                             (or (taut-channel-mention-count chan) 0)
                             (if (taut-channel-is-starred chan) 1 0)
+                            (if (taut-channel-is-hidden chan) 1 0)
                             (taut-channel-topic chan)
                             (taut-channel-purpose chan))))))
 
@@ -185,7 +188,7 @@ Creates the necessary tables if they do not exist."
               (setq taut-current-user-id id)))))
 
       ;; 2. Load channels
-      (let ((chans (sqlite-select db "SELECT id, name, type, unread_count, mention_count, is_starred, topic, purpose FROM channels")))
+      (let ((chans (sqlite-select db "SELECT id, name, type, unread_count, mention_count, is_starred, topic, purpose, is_hidden FROM channels")))
         (dolist (row chans)
           (let* ((id (nth 0 row))
                  (name (nth 1 row))
@@ -195,6 +198,7 @@ Creates the necessary tables if they do not exist."
                  (is-starred (nth 5 row))
                  (topic (nth 6 row))
                  (purpose (nth 7 row))
+                 (is-hidden (or (nth 8 row) 0))
                  (chan (make-taut-channel
                         :id id
                         :name name
@@ -202,6 +206,7 @@ Creates the necessary tables if they do not exist."
                         :unread-count unread-count
                         :mention-count mention-count
                         :is-starred (= is-starred 1)
+                        :is-hidden (= is-hidden 1)
                         :topic topic
                         :purpose purpose)))
             (setf (gethash id taut-channels) chan))))

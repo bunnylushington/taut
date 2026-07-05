@@ -45,6 +45,7 @@
   (unread-count 0)
   (mention-count 0)
   is-starred
+  is-hidden    ; t if the channel is marked as hidden
   topic
   purpose)
 
@@ -374,7 +375,11 @@ Debounces multiple rapid model changes."
   (taut-model-trigger-update))
 
 (defun taut-model-add-channel (chan)
-  "Register channel CHAN in the global database."
+  "Register channel CHAN in the global database.
+Preserves existing is-hidden state if already present."
+  (let ((existing (gethash (taut-channel-id chan) taut-channels)))
+    (when existing
+      (setf (taut-channel-is-hidden chan) (taut-channel-is-hidden existing))))
   (setf (gethash (taut-channel-id chan) taut-channels) chan)
   (when (fboundp 'taut-cache-save-channel)
     (taut-cache-save-channel chan))
@@ -474,6 +479,8 @@ If NO-INC-UNREAD-P is non-nil, do not increment channel unread count."
       (setf (taut-message-is-unread msg) nil)
       (when (fboundp 'taut-cache-save-message)
         (taut-cache-save-message msg)))
+    (when (fboundp 'taut-api-mark-channel-read)
+      (funcall 'taut-api-mark-channel-read channel-id))
     (taut-model-trigger-update)))
 
 (defun taut-model-mark-thread-read (thread-ts)

@@ -91,6 +91,7 @@
           ;; Fetch live workspace updates
           (taut-api-fetch-users)
           (taut-api-fetch-channels)
+          (taut-api-fetch-active-presences)
           (taut-api-fetch-starred)
           (taut-api-fetch-inbox-history)
           

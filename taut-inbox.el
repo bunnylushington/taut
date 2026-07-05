@@ -14,6 +14,8 @@
 
 (require 'taut-model)
 
+(defvar taut-use-icons)
+
 (declare-function taut-dispatch "taut-transient")
 
 ;;;; Faces
@@ -98,7 +100,7 @@
 ;;;; Major Mode Definition
 
 (defvar-local taut-inbox-filter 'all
-  "The current active filter in the Taut Inbox.
+  "The current active filter in Slack Activity.
 Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 
 (defvar taut-inbox-mode-map (make-sparse-keymap)
@@ -109,6 +111,7 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 (define-key taut-inbox-mode-map (kbd "d") #'taut-inbox-mark-read)
 (define-key taut-inbox-mode-map (kbd "e") #'taut-inbox-mark-read) ; Alternative archive/dismiss key
 (define-key taut-inbox-mode-map (kbd "g") #'taut-inbox-refresh)
+(define-key taut-inbox-mode-map (kbd "M") #'taut-inbox-mark-channel-read)
 (define-key taut-inbox-mode-map (kbd "q") #'taut-inbox-bury)
 (define-key taut-inbox-mode-map (kbd "a") #'taut-inbox-filter-all)
 (define-key taut-inbox-mode-map (kbd "u") #'taut-inbox-filter-unreads)
@@ -117,8 +120,8 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 (define-key taut-inbox-mode-map (kbd "t") #'taut-inbox-filter-threads)
 (define-key taut-inbox-mode-map (kbd "?") #'taut-dispatch)
 
-(define-derived-mode taut-inbox-mode special-mode "Taut-Inbox"
-  "Major mode for the Taut unified Inbox.
+(define-derived-mode taut-inbox-mode special-mode "Slack Activity"
+  "Major mode for Taut Slack Activity.
 
 \\{taut-inbox-mode-map}"
   (setq buffer-read-only t
@@ -129,9 +132,9 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 ;;;; Rendering Engine
 
 (defun taut-inbox-refresh ()
-  "Redraw the inbox buffer contents if it exists and is visible."
+  "Redraw the Slack Activity buffer contents if it exists and is visible."
   (interactive)
-  (let ((buf (get-buffer "*Taut Inbox*")))
+  (let ((buf (get-buffer "*Slack Activity*")))
     (when buf
       (with-current-buffer buf
         (let ((inhibit-read-only t)
@@ -143,7 +146,7 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 (defun taut-inbox--render-header ()
   "Render a beautiful header with navigation and active filter indication."
   (insert (propertize "================================================================================\n" 'face 'font-lock-comment-face))
-  (insert (propertize "  💬 TAUT ACTIVITY INBOX\n" 'face '(:weight bold :height 1.2 :foreground "#e01e5a")))
+  (insert (propertize "  💬 SLACK ACTIVITY\n" 'face '(:weight bold :height 1.2 :foreground "#e01e5a")))
   (insert (propertize "================================================================================\n" 'face 'font-lock-comment-face))
   
   ;; Render filters bar
@@ -185,19 +188,12 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
                 ((eq taut-inbox-filter 'threads)  (eq type 'thread-update))
                 (t t))))
            all-items))
-         ;; Sort items: Unreads first, then by timestamp descending
+         ;; Sort items: chronologically descending by timestamp
          (sorted-items
           (sort filtered-items
                 (lambda (a b)
-                  (let ((read-a (taut-inbox-item-is-read a))
-                        (read-b (taut-inbox-item-is-read b)))
-                    (cond
-                     ;; If one is unread and the other is read, unread comes first
-                     ((and (not read-a) read-b) t)
-                     ((and read-a (not read-b)) nil)
-                     ;; Otherwise, sort by timestamp descending
-                     (t (string> (or (taut-inbox-item-ts a) "")
-                                 (or (taut-inbox-item-ts b) "")))))))))
+                  (string> (or (taut-inbox-item-ts a) "")
+                           (or (taut-inbox-item-ts b) ""))))))
     
     (if (null sorted-items)
         (insert "  ✨ No activity matches this filter.\n")
@@ -208,6 +204,51 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
               (setq current-date-group date-group)
               (insert "\n  " (propertize date-group 'face '(:weight bold :foreground "#36c5f0" :underline t)) "\n\n"))
             (taut-inbox--render-row item)))))))
+
+(defun taut-inbox--get-icon-badge (type)
+  "Get a stylized icon badge for TYPE.
+Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
+  (if (and (boundp 'taut-use-icons) taut-use-icons (fboundp 'nerd-icons-octicon))
+      (cond
+       ((eq type 'dm)
+        (propertize (concat " " (nerd-icons-octicon "nf-oct-person" :face 'taut-inbox-type-dm) " DM ")
+                    'face 'taut-inbox-type-dm))
+       ((eq type 'mention)
+        (propertize (concat " " (nerd-icons-octicon "nf-oct-mention" :face 'taut-inbox-type-mention) " MENTION ")
+                    'face 'taut-inbox-type-mention))
+       ((eq type 'thread-update)
+        (propertize (concat " " (nerd-icons-octicon "nf-oct-comment_discussion" :face 'taut-inbox-type-thread) " THREAD ")
+                    'face 'taut-inbox-type-thread))
+       ((eq type 'channel)
+        (propertize (concat " " (nerd-icons-octicon "nf-oct-hash" :face 'taut-inbox-type-channel) " CHANNEL ")
+                    'face 'taut-inbox-type-channel))
+       (t
+        (propertize (concat " " (nerd-icons-octicon "nf-oct-comment" :face 'taut-inbox-type-channel) " CHAT ")
+                    'face 'taut-inbox-type-channel)))
+    (if (and (boundp 'taut-use-icons) taut-use-icons (fboundp 'all-the-icons-octicon))
+        (cond
+         ((eq type 'dm)
+          (propertize (concat " " (all-the-icons-octicon "person" :face 'taut-inbox-type-dm) " DM ")
+                      'face 'taut-inbox-type-dm))
+         ((eq type 'mention)
+          (propertize (concat " " (all-the-icons-octicon "mention" :face 'taut-inbox-type-mention) " MENTION ")
+                      'face 'taut-inbox-type-mention))
+         ((eq type 'thread-update)
+          (propertize (concat " " (all-the-icons-octicon "comment-discussion" :face 'taut-inbox-type-thread) " THREAD ")
+                      'face 'taut-inbox-type-thread))
+         ((eq type 'channel)
+          (propertize (concat " " (all-the-icons-octicon "tag" :face 'taut-inbox-type-channel) " CHANNEL ")
+                      'face 'taut-inbox-type-channel))
+         (t
+          (propertize (concat " " (all-the-icons-octicon "comment" :face 'taut-inbox-type-channel) " CHAT ")
+                      'face 'taut-inbox-type-channel)))
+      ;; Unicode fallback symbols
+      (cond
+       ((eq type 'dm)             (propertize " 👤 DM " 'face 'taut-inbox-type-dm))
+       ((eq type 'mention)        (propertize " @ MENTION " 'face 'taut-inbox-type-mention))
+       ((eq type 'thread-update)  (propertize " 💬 THREAD " 'face 'taut-inbox-type-thread))
+       ((eq type 'channel)        (propertize " ♯ CHANNEL " 'face 'taut-inbox-type-channel))
+       (t                         (propertize " 💬 CHAT " 'face 'taut-inbox-type-channel))))))
 
 (defun taut-inbox--render-row (item)
   "Render a single inbox row for ITEM."
@@ -222,12 +263,7 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
          (time-str (taut-inbox--format-relative-date (taut-inbox-item-ts item)))
          (time-part (propertize (format "[%s]" time-str) 'face 'taut-inbox-time))
          ;; Stylize Source Type Badge
-         (badge-part (cond
-                      ((eq type 'dm)             (propertize " 👤 DM " 'face 'taut-inbox-type-dm))
-                      ((eq type 'mention)        (propertize " @ MENTION " 'face 'taut-inbox-type-mention))
-                      ((eq type 'thread-update)  (propertize " 💬 THREAD " 'face 'taut-inbox-type-thread))
-                      ((eq type 'channel)        (propertize " ♯ CHANNEL " 'face 'taut-inbox-type-channel))
-                      (t                         (propertize " 💬 CHAT " 'face 'taut-inbox-type-channel))))
+         (badge-part (taut-inbox--get-icon-badge type))
          ;; Sender user name
          (sender (taut-model-get-user (taut-inbox-item-user-id item)))
          (sender-display (if sender
@@ -280,7 +316,11 @@ Includes representations like Today, Yesterday, day of week, or date."
          ((< diff 604800)
           (format-time-string "%A %H:%M" time-val))
          (t
-          (format-time-string "%b %d" time-val))))
+          (let ((item-year (format-time-string "%Y" time-val))
+                (current-year (format-time-string "%Y")))
+            (if (equal item-year current-year)
+                (format-time-string "%b %d" time-val)
+              (format-time-string "%b %d, %Y" time-val))))))
     "--:--"))
 
 (defun taut-inbox--format-date-group (ts-str)
@@ -295,7 +335,12 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
          ((< diff 86400) "Today")
          ((< diff 172800) "Yesterday")
          ((< diff 604800) (format-time-string "%A" time-val))
-         (t (format-time-string "%B %d" time-val))))
+         (t
+          (let ((item-year (format-time-string "%Y" time-val))
+                (current-year (format-time-string "%Y")))
+            (if (equal item-year current-year)
+                (format-time-string "%B %d" time-val)
+              (format-time-string "%B %d, %Y" time-val))))))
     "Older Activity"))
 
 (defun taut-inbox--clean-snippet (text)
@@ -352,6 +397,19 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
         (message "Marked read.")
         (taut-inbox-refresh)))))
 
+(defun taut-inbox-mark-channel-read ()
+  "Mark all messages in the channel under the cursor as read."
+  (interactive)
+  (let ((item (get-text-property (point) 'taut-inbox-item)))
+    (if (null item)
+        (message "No item at point.")
+      (let ((chan-id (taut-inbox-item-channel-id item)))
+        (if (null chan-id)
+            (message "No channel associated with this item.")
+          (taut-model-mark-channel-read chan-id)
+          (message "Marked all messages in channel as read.")
+          (taut-inbox-refresh))))))
+
 (defun taut-inbox-filter-all ()
   "Show all activity in the inbox."
   (interactive)
@@ -383,18 +441,24 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
   (taut-inbox-refresh))
 
 (defun taut-inbox-show ()
-  "Display the Taut Inbox in the active central window."
+  "Display the Slack Activity in the active central window."
   (interactive)
-  (let ((buf (get-buffer-create "*Taut Inbox*")))
+  (let ((buf (get-buffer-create "*Slack Activity*"))
+        (sidebar-win (get-buffer-window "*Taut Sidebar*")))
     (with-current-buffer buf
       (unless (eq major-mode 'taut-inbox-mode)
         (taut-inbox-mode)))
-    (switch-to-buffer buf)
+    (cond
+     ((and sidebar-win (eq (selected-window) sidebar-win))
+      (select-window (next-window sidebar-win))
+      (switch-to-buffer buf))
+     (t
+      (switch-to-buffer buf)))
     (taut-inbox-refresh)
     buf))
 
 (defun taut-inbox-bury ()
-  "Bury the Taut Inbox buffer."
+  "Bury the Slack Activity buffer."
   (interactive)
   (bury-buffer))
 

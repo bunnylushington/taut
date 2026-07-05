@@ -134,9 +134,37 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :id id
             :username (cdr (assoc 'name m))
             :real-name (or (cdr (assoc 'real_name profile)) (cdr (assoc 'real_name m)) (cdr (assoc 'name m)))
-            :presence (if (equal (cdr (assoc 'presence m)) "away") 'away 'online)
+            :presence (if (equal (cdr (assoc 'presence m)) "away") 'away 'offline)
             :is-me (equal id taut-current-user-id))))))
   (message "Taut: Synced %d workspace users." (hash-table-count taut-users))))
+
+(defun taut-api-fetch-active-presences ()
+  "Fetch presence status for all users involved in active DM conversations."
+  (interactive)
+  (let (user-ids)
+    (maphash (lambda (_id chan)
+               (when (and (eq (taut-channel-type chan) 'dm)
+                          (or (> (or (taut-channel-unread-count chan) 0) 0)
+                              (> (or (taut-channel-mention-count chan) 0) 0)
+                              (and (fboundp 'taut-model-channel-active-last-30-days-p)
+                                   (taut-model-channel-active-last-30-days-p (taut-channel-id chan)))))
+                 (let ((user (taut-model-get-user-by-username (taut-channel-name chan))))
+                   (when user
+                     (push (taut-user-id user) user-ids)))))
+             taut-channels)
+    (when user-ids
+      (message "Taut: Syncing presence for %d active direct messages..." (length user-ids))
+      (dolist (uid user-ids)
+        (ignore-errors
+          (let* ((res (taut-api--request "users.getPresence" `((user . ,uid)) "GET"))
+                 (presence-str (cdr (assoc 'presence res))))
+            (when presence-str
+              (let ((user (taut-model-get-user uid)))
+                (when user
+                  (setf (taut-user-presence user) (intern presence-str))
+                  (when (fboundp 'taut-cache-save-user)
+                    (taut-cache-save-user user))))))))
+      (message "Taut: Finished syncing active presences."))))
 
 (defun taut-api--bool (val)
   "Convert a JSON-parsed boolean VAL to a standard Lisp boolean.
@@ -616,6 +644,21 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
   (let ((params `((channel . ,channel-id)
                   (timestamp . ,timestamp))))
     (taut-api--request "stars.remove" params "POST")))
+
+(defun taut-api-mark-channel-read (channel-id &optional ts)
+  "Mark CHANNEL-ID as read up to TS on Slack.
+If TS is nil, use the timestamp of the latest message in memory."
+  (interactive "sChannel ID: ")
+  (let* ((resolved-ts (or ts
+                          (let ((msgs (gethash channel-id taut-messages)))
+                            (and msgs (taut-message-ts (car (last msgs))))))))
+    (when resolved-ts
+      (ignore-errors
+        (taut-api--request "conversations.mark"
+                           `((channel . ,channel-id)
+                             (ts . ,resolved-ts))
+                           "POST")))))
+
 (defun taut-api-open-dm (user-id)
   "Open or create a direct message channel with USER-ID."
   (let* ((user-id (or user-id "unknown"))

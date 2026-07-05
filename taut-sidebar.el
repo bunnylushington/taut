@@ -73,12 +73,18 @@
   :type 'integer
   :group 'taut)
 
+(defcustom taut-use-icons t
+  "When non-nil, use icon packages if available (e.g. nerd-icons)."
+  :type 'boolean
+  :group 'taut)
+
 (defvar taut-sidebar-section-state
   '((starred . t)
     (bookmarks . t)
     (channels . t)
     (dms . t)
-    (threads . t))
+    (threads . t)
+    (hidden . nil))
   "Alist tracking whether sections are expanded (t) or collapsed (nil).")
 
 ;;;; Major Mode Definition
@@ -89,6 +95,8 @@
     (define-key map (kbd "<mouse-1>") #'taut-sidebar-mouse-activate)
     (define-key map (kbd "g") #'taut-sidebar-refresh)
     (define-key map (kbd "TAB") #'taut-sidebar-toggle-section-at-point)
+    (define-key map (kbd "M") #'taut-sidebar-mark-all-read)
+    (define-key map (kbd "h") #'taut-sidebar-toggle-channel-hidden)
     (define-key map (kbd "q") #'taut-sidebar-bury)
     (define-key map (kbd "?") #'taut-dispatch)
     map)
@@ -105,6 +113,65 @@
 
 ;;;; Rendering Engine
 
+(defun taut-sidebar--get-icon (type)
+  "Get icon for TYPE (e.g., `public', `private', `dm', `thread')."
+  (or (and taut-use-icons (fboundp 'nerd-icons-octicon)
+           (condition-case nil
+               (cond
+                ((eq type 'public) (concat (nerd-icons-octicon "nf-oct-hash" :face 'taut-sidebar-channel) " "))
+                ((eq type 'private) (concat (nerd-icons-octicon "nf-oct-lock" :face 'taut-sidebar-channel) " "))
+                ((eq type 'dm) (concat (nerd-icons-octicon "nf-oct-person" :face 'taut-sidebar-channel) " "))
+                ((eq type 'thread) (concat (nerd-icons-octicon "nf-oct-comment_discussion" :face 'taut-sidebar-channel) " "))
+                ((eq type 'star) (concat (nerd-icons-octicon "nf-oct-star" :face 'warning) " "))
+                ((eq type 'bookmark) (concat (nerd-icons-octicon "nf-oct-bookmark" :face 'success) " "))
+                ((eq type 'group) (concat (nerd-icons-octicon "nf-oct-people" :face 'taut-sidebar-channel) " ")))
+             (error nil)))
+      (and taut-use-icons (fboundp 'all-the-icons-octicon)
+           (condition-case nil
+               (cond
+                ((eq type 'public) (concat (all-the-icons-octicon "tag" :face 'taut-sidebar-channel) " "))
+                ((eq type 'private) (concat (all-the-icons-octicon "lock" :face 'taut-sidebar-channel) " "))
+                ((eq type 'dm) (concat (all-the-icons-octicon "person" :face 'taut-sidebar-channel) " "))
+                ((eq type 'thread) (concat (all-the-icons-octicon "comment-discussion" :face 'taut-sidebar-channel) " "))
+                ((eq type 'star) (concat (all-the-icons-octicon "star" :face 'warning) " "))
+                ((eq type 'bookmark) (concat (all-the-icons-octicon "bookmark" :face 'success) " "))
+                ((eq type 'group) (concat (all-the-icons-octicon "people" :face 'taut-sidebar-channel) " ")))
+             (error nil)))
+      ;; Unicode fallback symbols
+      (cond
+       ((eq type 'public) "# ")
+       ((eq type 'private) "🔒 ")
+       ((eq type 'dm) "👤 ")
+       ((eq type 'thread) "💬 ")
+       ((eq type 'star) "⭐ ")
+       ((eq type 'bookmark) "🔖 ")
+       ((eq type 'group) "👥 ")
+       (t " "))))
+
+(defun taut-sidebar--get-section-label (sym label)
+  "Get the label for section SYM. Uses nice icons if available."
+  (or (and taut-use-icons (fboundp 'nerd-icons-octicon)
+           (condition-case nil
+               (cond
+                ((eq sym 'starred) (concat (nerd-icons-octicon "nf-oct-star" :face 'warning) " STARRED"))
+                ((eq sym 'bookmarks) (concat (nerd-icons-octicon "nf-oct-bookmark" :face 'success) " BOOKMARKS"))
+                ((eq sym 'channels) (concat (nerd-icons-octicon "nf-oct-hash" :face 'taut-sidebar-channel) " CHANNELS"))
+                ((eq sym 'dms) (concat (nerd-icons-octicon "nf-oct-mail" :face 'taut-sidebar-channel) " DIRECT MESSAGES"))
+                ((eq sym 'threads) (concat (nerd-icons-octicon "nf-oct-comment_discussion" :face 'taut-sidebar-channel) " THREADS"))
+                ((eq sym 'hidden) (concat (nerd-icons-octicon "nf-oct-eye_closed" :face 'font-lock-comment-face) " HIDDEN")))
+             (error nil)))
+      (and taut-use-icons (fboundp 'all-the-icons-octicon)
+           (condition-case nil
+               (cond
+                ((eq sym 'starred) (concat (all-the-icons-octicon "star" :face 'warning) " STARRED"))
+                ((eq sym 'bookmarks) (concat (all-the-icons-octicon "bookmark" :face 'success) " BOOKMARKS"))
+                ((eq sym 'channels) (concat (all-the-icons-octicon "tag" :face 'taut-sidebar-channel) " CHANNELS"))
+                ((eq sym 'dms) (concat (all-the-icons-octicon "mail" :face 'taut-sidebar-channel) " DIRECT MESSAGES"))
+                ((eq sym 'threads) (concat (all-the-icons-octicon "comment-discussion" :face 'taut-sidebar-channel) " THREADS"))
+                ((eq sym 'hidden) (concat (all-the-icons-octicon "eye-closed" :face 'font-lock-comment-face) " HIDDEN")))
+             (error nil)))
+      label))
+
 (defun taut-sidebar-refresh ()
   "Redraw the sidebar buffer contents if it exists."
   (interactive)
@@ -119,12 +186,15 @@
 
 (defun taut-sidebar--render-sections ()
   "Render all sections to the current buffer."
+  ;; Add a line or two of space at the top of the sidebar
+  (insert "\n\n")
   (let ((channels (taut-model-get-channels-list))
-        starred public-chans dms)
+        starred public-chans dms hidden-chans)
     
     ;; Split channels into logical lists
     (dolist (chan channels)
       (cond
+       ((taut-channel-is-hidden chan) (push chan hidden-chans))
        ((taut-channel-is-starred chan) (push chan starred))
        ((eq (taut-channel-type chan) 'dm)
         (when (or (> (or (taut-channel-unread-count chan) 0) 0)
@@ -135,21 +205,24 @@
 
     (setq starred (nreverse starred)
           public-chans (nreverse public-chans)
-          dms (nreverse dms))
+          dms (nreverse dms)
+          hidden-chans (nreverse hidden-chans))
 
     ;; Render each section
     (taut-sidebar--render-section 'starred "★ STARRED" starred)
-    (taut-sidebar--render-bookmarks)
     (taut-sidebar--render-section 'channels "♯ CHANNELS" public-chans)
     (taut-sidebar--render-section 'dms "✉ DIRECT MESSAGES" dms)
-    (taut-sidebar--render-section-threads)))
+    (taut-sidebar--render-bookmarks)
+    (taut-sidebar--render-section-threads)
+    (taut-sidebar--render-section 'hidden "🔒 HIDDEN" hidden-chans)))
 
 (defun taut-sidebar--render-section (sym label items)
   "Render a single collapsible section identified by SYM, with LABEL and ITEMS."
   (let* ((expanded (alist-get sym taut-sidebar-section-state))
-         (indicator (if expanded "▼" "▶")))
+         (indicator (if expanded "▼" "▶"))
+         (display-label (taut-sidebar--get-section-label sym label)))
     ;; Insert Header
-    (insert (propertize (format "%s %s\n" indicator label)
+    (insert (propertize (format "%s %s\n" indicator display-label)
                         'face 'taut-sidebar-header
                         'mouse-face 'highlight
                         'taut-section sym))
@@ -185,18 +258,18 @@
     (if (and is-dm (> (length resolved-names) 1))
         ;; Multi-participant DM: Render names separated by newlines.
         (progn
-          (insert "  👥 ")
+          (insert "  " (taut-sidebar--get-icon 'group))
           (insert (propertize (car resolved-names) 'face channel-face))
           (dolist (name (cdr resolved-names))
-            (insert "\n     ") ; Indented to line up with text under "👥 "
+            (insert "\n     ") ; Indented to line up with text under group icon
             (insert (propertize name 'face channel-face))))
       ;; Single participant DM or standard channel
       (let ((name-prefix (if is-dm
                              (let ((user (taut-model-get-user-by-username chan-name)))
                                (if user
                                    (taut-sidebar--user-status-indicator user)
-                                 "👥 "))
-                           "# ")))
+                                 (taut-sidebar--get-icon 'dm)))
+                           (taut-sidebar--get-icon (taut-channel-type chan)))))
         (insert "  " name-prefix)
         (insert (propertize (car resolved-names) 'face channel-face))))
     
@@ -219,8 +292,9 @@
   "Render the Threads section separately."
   (let* ((sym 'threads)
          (expanded (alist-get sym taut-sidebar-section-state))
-         (indicator (if expanded "▼" "▶")))
-    (insert (propertize (format "%s 💬 THREADS\n" indicator)
+         (indicator (if expanded "▼" "▶"))
+         (display-label (taut-sidebar--get-section-label sym "THREADS")))
+    (insert (propertize (format "%s %s\n" indicator display-label)
                         'face 'taut-sidebar-header
                         'mouse-face 'highlight
                         'taut-section sym))
@@ -233,7 +307,7 @@
                  (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
                  (has-unreads (> unread-reply-count 0))
                  (line-start (point)))
-            (insert "  " (if has-unreads "● " "  "))
+            (insert "  " (if has-unreads "● " (taut-sidebar--get-icon 'thread)))
             (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
               (insert (propertize (format "Thread %s" ts-suffix)
                                   'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))))
@@ -255,6 +329,34 @@
      (t                      (propertize "○ " 'face 'taut-sidebar-status-offline)))))
 
 ;;;; Interaction Handlers
+
+(defun taut-sidebar-mark-all-read ()
+  "Mark all messages in the current channel under point as read."
+  (interactive)
+  (let ((chan-id (get-text-property (point) 'taut-channel-id)))
+    (if (null chan-id)
+        (message "No channel at point.")
+      (taut-model-mark-channel-read chan-id)
+      (message "Marked all messages in channel as read.")
+      (taut-sidebar-refresh))))
+
+(defun taut-sidebar-toggle-channel-hidden ()
+  "Toggle the hidden status of the channel at point."
+  (interactive)
+  (let ((chan-id (get-text-property (point) 'taut-channel-id)))
+    (if (null chan-id)
+        (message "No channel at point.")
+      (let ((chan (taut-model-get-channel chan-id)))
+        (if (null chan)
+            (message "No channel found for %s" chan-id)
+          (let ((new-state (not (taut-channel-is-hidden chan))))
+            (setf (taut-channel-is-hidden chan) new-state)
+            (when (fboundp 'taut-cache-save-channel)
+              (taut-cache-save-channel chan))
+            (message "Channel '%s' is now %s."
+                     (taut-channel-name chan)
+                     (if new-state "hidden" "visible"))
+            (taut-sidebar-refresh)))))))
 
 (defun taut-sidebar-activate ()
   "Handle selection of whatever is under the cursor."
@@ -298,8 +400,9 @@
   (let* ((sym 'bookmarks)
          (expanded (alist-get sym taut-sidebar-section-state))
          (indicator (if expanded "▼" "▶"))
+         (display-label (taut-sidebar--get-section-label sym "BOOKMARKS"))
          (items (taut-model-get-starred-messages)))
-    (insert (propertize (format "%s 🔖 BOOKMARKS\n" indicator)
+    (insert (propertize (format "%s %s\n" indicator display-label)
                         'face 'taut-sidebar-header
                         'mouse-face 'highlight
                         'taut-section sym))
@@ -310,11 +413,12 @@
           (let* ((user (taut-model-get-user (taut-message-user-id msg)))
                  (username (if user (or (taut-user-username user) "unknown") "unknown"))
                  (text (taut-message-text msg))
-                 ;; Clean up text (replace newlines with spaces and limit snippet size)
+                 ;; Clean up text: replace newlines with spaces and
+                 ;; limit snippet size.
                  (snippet (replace-regexp-in-string "\n" " " (or text "")))
                  (snippet (if (> (length snippet) 30) (concat (substring snippet 0 27) "...") snippet))
                  (line-start (point)))
-            (insert "  ⭐ ")
+            (insert "  " (taut-sidebar--get-icon 'star))
             (insert (propertize (format "@%s: " username) 'face 'font-lock-comment-face))
             (insert (propertize snippet 'face 'taut-sidebar-channel))
             (add-text-properties line-start (point)
@@ -389,6 +493,7 @@
                 (window-resize left-window delta t))))
           (setq window left-window)))
       (taut-sidebar-refresh)
+      (select-window window)
       window)))
 
 (defun taut-sidebar-bury ()

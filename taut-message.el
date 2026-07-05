@@ -279,6 +279,7 @@
 (define-key taut-message-mode-map (kbd "c") #'taut-message-copy-at-point)
 (define-key taut-message-mode-map (kbd "u") #'taut-message-upload-file)
 (define-key taut-message-mode-map (kbd "d") #'taut-message-delete)
+(define-key taut-message-mode-map (kbd "M") #'taut-message-mark-all-read)
 (define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
@@ -334,6 +335,15 @@
       (if found resolved (min old-point (point-max)))))
    (t
     (min old-point (point-max)))))
+
+(defun taut-message-mark-all-read ()
+  "Mark all messages in the current channel as read."
+  (interactive)
+  (if taut-current-channel-id
+      (progn
+        (taut-model-mark-channel-read taut-current-channel-id)
+        (message "Marked all messages in channel as read."))
+    (message "No active channel for this buffer.")))
 
 (defun taut-message-refresh (&optional fetch-p)
   "Redraw the current conversation buffer.
