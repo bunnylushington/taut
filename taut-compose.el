@@ -32,6 +32,9 @@
 (defvar-local taut-compose-thread-ts nil
   "The target thread timestamp for this draft, or nil for main channel.")
 
+(defvar-local taut-compose-edit-ts nil
+  "The timestamp of the message being edited, or nil if posting new.")
+
 ;;;; Keymap & Major Mode
 
 (defvar taut-compose-mode-map
@@ -55,10 +58,12 @@
                              (name (if chan (or (taut-channel-name chan) "unknown") "unknown"))
                              (is-dm (and chan (eq (taut-channel-type chan) 'dm)))
                              (prefix (if is-dm "@" "#"))
-                             (is-thread taut-compose-thread-ts))
-                        (format " %s Composing %s in %s%s  [C-c C-c to send, C-c C-k to abort, ? for helper]"
-                                (if is-thread "🧵" "💬")
-                                (if is-thread "thread reply" "message")
+                             (is-thread taut-compose-thread-ts)
+                             (is-edit taut-compose-edit-ts))
+                        (format " %s %s %s in %s%s  [C-c C-c to send, C-c C-k to abort, ? for helper]"
+                                (if is-edit "✏️" (if is-thread "🧵" "💬"))
+                                (if is-edit "Editing" "Composing")
+                                (if is-edit "message" (if is-thread "thread reply" "message"))
                                 prefix
                                 name))))
   (setq word-wrap t)
@@ -95,8 +100,11 @@
 ;;;; Core Composer Operations
 
 ;;;###autoload
-(defun taut-compose-open (channel-id &optional thread-ts quote-msg)
-  "Open the `*Taut Compose*` buffer for writing a message."
+(defun taut-compose-open (channel-id &optional thread-ts quote-msg edit-ts edit-text)
+  "Open the `*Taut Compose*` buffer for writing a message.
+CHANNEL-ID specifies the channel.  Optional THREAD-TS is for replies.
+QUOTE-MSG can be a message struct to quote.
+EDIT-TS and EDIT-TEXT are used for editing an existing message."
   (let* ((buf-name "*Taut Compose*")
          (buf (get-buffer-create buf-name))
          (functions (if (fboundp 'display-buffer-below-selected)
@@ -108,18 +116,22 @@
       (unless (eq major-mode 'taut-compose-mode)
         (taut-compose-mode))
       (setq taut-compose-channel-id channel-id
-            taut-compose-thread-ts thread-ts)
+            taut-compose-thread-ts thread-ts
+            taut-compose-edit-ts edit-ts)
       (erase-buffer)
       
-      ;; Insert quote if requested
-      (when quote-msg
+      (cond
+       (edit-ts
+        (when edit-text
+          (insert edit-text)))
+       (quote-msg
         (let* ((user (taut-model-get-user (taut-message-user-id quote-msg)))
                (username (if user (or (taut-user-username user) "unknown") "unknown"))
                (text (or (taut-message-text quote-msg) ""))
                (quoted-lines (mapcar (lambda (line) (concat "> " line))
                                      (split-string text "\n"))))
           (insert (format "> *@%s wrote:*\n" username))
-          (insert (mapconcat #'identity quoted-lines "\n") "\n\n"))))
+          (insert (mapconcat #'identity quoted-lines "\n") "\n\n")))))
     
     ;; Place the compose buffer in a window at the bottom of the frame
     (pop-to-buffer buf action)
@@ -127,32 +139,40 @@
 
 ;;;###autoload
 (defun taut-compose-send ()
-  "Send the composed message to Slack."
+  "Send the composed message to Slack or update an existing message."
   (interactive)
   ;; Translate any remaining emoticons (e.g. pasted or typed fast) before sending
   (let* ((text (buffer-substring-no-properties (point-min) (point-max)))
          (translated-text (taut-emoticon-translate-string text))
          (chan-id taut-compose-channel-id)
-         (thread-ts taut-compose-thread-ts))
+         (thread-ts taut-compose-thread-ts)
+         (edit-ts taut-compose-edit-ts))
     (if (string-blank-p translated-text)
         (message "Cannot send an empty message.")
-      ;; Post the message!
+      ;; Post or update the message!
       (if (and (boundp 'taut-bot-token) taut-bot-token)
-          (taut-api-post-message chan-id translated-text thread-ts)
+          (if edit-ts
+              (taut-api-update-message chan-id edit-ts translated-text)
+            (taut-api-post-message chan-id translated-text thread-ts))
         ;; Fallback to offline/mock
-        (let* ((ts (format "%d.0000" (time-convert nil 'integer)))
-               (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) translated-text)))
-          (taut-model-add-message
-           (make-taut-message
-            :id (concat "msg_" ts)
-            :channel-id chan-id
-            :user-id taut-current-user-id
-            :text translated-text
-            :ts ts
-            :thread-ts thread-ts
-            :reply-count 0
-            :is-unread nil
-            :is-mention is-mention))))
+        (if edit-ts
+            (let ((m (taut-model-get-message-by-ts edit-ts)))
+              (when m
+                (setf (taut-message-text m) translated-text)
+                (taut-model-trigger-update)))
+          (let* ((ts (format "%d.0000" (time-convert nil 'integer)))
+                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) translated-text)))
+            (taut-model-add-message
+             (make-taut-message
+              :id (concat "msg_" ts)
+              :channel-id chan-id
+              :user-id taut-current-user-id
+              :text translated-text
+              :ts ts
+              :thread-ts thread-ts
+              :reply-count 0
+              :is-unread nil
+              :is-mention is-mention)))))
       ;; Refresh active buffers
       (dolist (buffer (buffer-list))
         (with-current-buffer buffer

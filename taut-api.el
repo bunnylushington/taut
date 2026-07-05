@@ -392,6 +392,19 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
       :is-unread nil
       :is-mention nil))))
 
+(defun taut-api-update-message (channel-id ts text)
+  "Update an existing message identified by TS on CHANNEL-ID with new TEXT."
+  (let* ((params `((channel . ,channel-id)
+                   (ts . ,ts)
+                   (text . ,text)))
+         (res (taut-api--request "chat.update" params "POST")))
+    ;; Update local model state
+    (let ((m (taut-model-get-message-by-ts ts)))
+      (when m
+        (setf (taut-message-text m) text)
+        (taut-model-trigger-update)))
+    res))
+
 (defun taut-api-add-reaction (channel-id timestamp emoji)
   "Add EMOJI reaction to message at TIMESTAMP in CHANNEL-ID."
   ;; Remove bounding colons if present (e.g. ":thumbsup:" -> "thumbsup")

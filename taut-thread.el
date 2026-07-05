@@ -19,6 +19,7 @@
 
 (declare-function taut-dispatch "taut-transient")
 (declare-function taut-message-upload-file "taut-message")
+(declare-function taut-message-edit "taut-message")
 
 ;;;; Faces
 
@@ -52,7 +53,7 @@
 (define-key taut-thread-mode-map (kbd "u") #'taut-message-upload-file)
 (define-key taut-thread-mode-map (kbd "q") #'taut-thread-close)
 (define-key taut-thread-mode-map (kbd "v") #'taut-message-view-at-point)
-(define-key taut-thread-mode-map (kbd "e") #'taut-message-view-at-point)
+(define-key taut-thread-mode-map (kbd "e") #'taut-message-edit)
 (define-key taut-thread-mode-map (kbd "s") #'taut-message-save-at-point)
 (define-key taut-thread-mode-map (kbd "c") #'taut-message-copy-at-point)
 (define-key taut-thread-mode-map (kbd "?") #'taut-dispatch)

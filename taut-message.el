@@ -16,6 +16,7 @@
 (require 'taut-api)
 (declare-function taut-message-reply-normal "taut-compose")
 (declare-function taut-message-reply-quote "taut-compose")
+(declare-function taut-compose-open "taut-compose" (channel-id &optional thread-ts quote-msg edit-ts edit-text))
 (declare-function taut-thread-refresh "taut-thread")
 
 (declare-function taut-code-block-dispatch "taut-transient")
@@ -265,7 +266,7 @@
 (define-key taut-message-mode-map (kbd "g") #'taut-message-refresh)
 (define-key taut-message-mode-map (kbd "q") #'taut-message-bury)
 (define-key taut-message-mode-map (kbd "v") #'taut-message-view-at-point)
-(define-key taut-message-mode-map (kbd "e") #'taut-message-view-at-point)
+(define-key taut-message-mode-map (kbd "e") #'taut-message-edit)
 (define-key taut-message-mode-map (kbd "s") #'taut-message-save-at-point)
 (define-key taut-message-mode-map (kbd "c") #'taut-message-copy-at-point)
 (define-key taut-message-mode-map (kbd "u") #'taut-message-upload-file)
@@ -1175,6 +1176,25 @@ Uses a premium autocomplete picker mapping emojis and shortcodes."
             (taut-thread-refresh)
           (taut-message-refresh))
         (message "Taut: Simulated upload of %s (%d bytes)" filename size)))))
+
+;;;###autoload
+(defun taut-message-edit ()
+  "Edit the message under the cursor if it was sent by the current user."
+  (interactive)
+  (let* ((ts (get-text-property (point) 'taut-message-ts))
+         (msg (and ts (taut-model-get-message-by-ts ts)))
+         (chan-id (and msg (taut-message-channel-id msg))))
+    (cond
+     ((null ts)
+      (message "No message under point to edit."))
+     ((null msg)
+      (message "Could not retrieve message details."))
+     ((not (equal (taut-message-user-id msg) taut-current-user-id))
+      (user-error "You can only edit your own messages."))
+     (t
+      (let ((text (taut-message-text msg))
+            (thread-ts (taut-message-thread-ts msg)))
+        (taut-compose-open chan-id thread-ts nil ts text))))))
 
 ;; Hook auto-updates
 (add-hook 'taut-model-updated-hook #'taut-message-refresh-all)
