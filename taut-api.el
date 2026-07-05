@@ -127,9 +127,8 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
     (dolist (m members)
       (let* ((id (cdr (assoc 'id m)))
              (profile (cdr (assoc 'profile m)))
-             (is-bot (cdr (assoc 'is_bot m)))
              (deleted (cdr (assoc 'deleted m))))
-        (unless (or is-bot deleted)
+        (unless deleted
           (taut-model-add-user
            (make-taut-user
             :id id
@@ -138,6 +137,35 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :presence (if (equal (cdr (assoc 'presence m)) "away") 'away 'online)
             :is-me (equal id taut-current-user-id))))))
   (message "Taut: Synced %d workspace users." (hash-table-count taut-users))))
+
+(defun taut-api--extract-attachments-text (msg-data)
+  "Extract readable text from attachments in MSG-DATA."
+  (let* ((attachments (cdr (assoc 'attachments msg-data)))
+         (texts nil))
+    (dolist (att attachments)
+      (let ((title (cdr (assoc 'title att)))
+            (text (cdr (assoc 'text att)))
+            (fallback (cdr (assoc 'fallback att)))
+            (pretext (cdr (assoc 'pretext att))))
+        (when pretext (push pretext texts))
+        (when title (push title texts))
+        (when text (push text texts))
+        ;; Only use fallback if we didn't get any other fields
+        (when (and fallback (not (or text title pretext)))
+          (push fallback texts))))
+    (if texts
+        (mapconcat #'identity (nreverse texts) "\n")
+      "")))
+
+(defun taut-api--get-message-text (msg-data raw-text)
+  "Get combined message text from RAW-TEXT and attachments."
+  (let* ((attachment-text (taut-api--extract-attachments-text msg-data))
+         (clean-raw (or raw-text "")))
+    (if (string-blank-p clean-raw)
+        attachment-text
+      (if (string-blank-p attachment-text)
+          clean-raw
+        (concat clean-raw "\n" attachment-text)))))
 
 (defun taut-api--clean-mpim-name (raw-name)
   "Clean up MPIM raw name (mpdm-a--b-1 -> a, b)."
@@ -382,7 +410,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
         (when ts
           (unless (member subtype '("channel_join" "channel_leave" "channel_topic" "channel_purpose" "channel_name"))
             (let* ((raw-text (or (cdr (assoc 'text m)) ""))
-                   (text (taut-api-unescape-html (taut-api--format-file-shares m raw-text)))
+                   (full-text (taut-api--get-message-text m raw-text))
+                   (text (taut-api-unescape-html (taut-api--format-file-shares m full-text)))
                    (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
                    (thread-ts (cdr (assoc 'thread_ts m)))
                    (reply-count (cdr (assoc 'reply_count m)))
@@ -438,7 +467,9 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
     (dolist (m (cdr messages))
       (let* ((ts (cdr (assoc 'ts m)))
              (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown"))
-             (text (taut-api-unescape-html (or (cdr (assoc 'text m)) "")))
+             (raw-text (or (cdr (assoc 'text m)) ""))
+             (full-text (taut-api--get-message-text m raw-text))
+             (text (taut-api-unescape-html full-text))
              (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
              (starred-val (cdr (assoc 'is_starred m)))
              (is-starred (and starred-val (not (eq starred-val :json-false)))))
