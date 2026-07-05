@@ -269,6 +269,7 @@
 (define-key taut-message-mode-map (kbd "s") #'taut-message-save-at-point)
 (define-key taut-message-mode-map (kbd "c") #'taut-message-copy-at-point)
 (define-key taut-message-mode-map (kbd "u") #'taut-message-upload-file)
+(define-key taut-message-mode-map (kbd "d") #'taut-message-delete)
 (define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
@@ -1052,6 +1053,26 @@ Uses a premium autocomplete picker mapping emojis and shortcodes."
               (setf (taut-message-is-starred msg) new-state)
               (taut-model-trigger-update)
               (message "Taut (offline): %s message." (if new-state "Bookmarked" "Unbookmarked")))))))))
+
+(defun taut-message-delete ()
+  "Delete the message under the cursor after confirmation."
+  (interactive)
+  (let* ((ts (get-text-property (point) 'taut-message-ts))
+         (msg (and ts (taut-model-get-message-by-ts ts)))
+         (chan-id (and msg (taut-message-channel-id msg))))
+    (if (or (null ts) (null chan-id))
+        (message "No message under point to delete.")
+      (let ((is-online (and (boundp 'taut-bot-token) taut-bot-token)))
+        (if is-online
+            (when (y-or-n-p "Delete this message? ")
+              (taut-api-delete-message chan-id ts)
+              (message "Taut: Message deletion requested.")
+              (taut-message-refresh))
+          ;; Mock delete for offline testing
+          (when (y-or-n-p "Delete this message (Mock)? ")
+            (taut-model-delete-message ts)
+            (message "Taut: Message deleted (offline mock).")
+            (taut-message-refresh)))))))
 
 (defun taut-message--start-of-message (pos)
   "Find the start position of the message block containing POS."

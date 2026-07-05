@@ -257,6 +257,25 @@ Debounces multiple rapid model changes."
   (setf (gethash (taut-channel-id chan) taut-channels) chan)
   (taut-model-trigger-update))
 
+(defun taut-model-delete-message (ts)
+  "Remove message with timestamp TS from storage (both channels and threads)."
+  (let ((found nil))
+    (maphash (lambda (chan-id msgs)
+               (let ((new-msgs (cl-remove-if (lambda (m) (equal (taut-message-ts m) ts)) msgs)))
+                 (unless (= (length msgs) (length new-msgs))
+                   (setq found t)
+                   (puthash chan-id new-msgs taut-messages))))
+             taut-messages)
+    (maphash (lambda (thread-ts replies)
+               (let ((new-replies (cl-remove-if (lambda (m) (equal (taut-message-ts m) ts)) replies)))
+                 (unless (= (length replies) (length new-replies))
+                   (setq found t)
+                   (puthash thread-ts new-replies taut-threads))))
+             taut-threads)
+    (when found
+      (taut-model-trigger-update))
+    found))
+
 (defun taut-model-add-message (msg &optional no-inc-reply-p)
   "Insert message MSG into storage, managing unreads and notifications.
 Avoid inserting duplicate messages based on timestamp TS.

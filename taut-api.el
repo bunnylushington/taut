@@ -497,5 +497,12 @@ Uses the active bearer token for authorization."
         (apply #'call-process curl-bin nil t nil args)))
     (message "Taut: Successfully downloaded file to %s" local-path)))
 
+(defun taut-api-delete-message (channel-id ts)
+  "Delete a message with timestamp TS in CHANNEL-ID."
+  (taut-api--request "chat.delete"
+                     `((channel . ,channel-id)
+                       (ts . ,ts))
+                     "POST"))
+
 (provide 'taut-api)
 ;;; taut-api.el ends here
