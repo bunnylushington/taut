@@ -123,7 +123,9 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
 
 (defun taut-model-get-messages (channel-id)
   "Get all messages for CHANNEL-ID, sorted by timestamp ascending."
-  (gethash channel-id taut-messages))
+  (let ((msgs (gethash channel-id taut-messages)))
+    (sort (copy-sequence msgs)
+          (lambda (a b) (string< (taut-message-ts a) (taut-message-ts b))))))
 
 (defun taut-model-get-thread-replies (thread-ts)
   "Get all replies for the thread identified by THREAD-TS."

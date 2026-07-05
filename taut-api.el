@@ -271,23 +271,27 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             files-str))
       text)))
 
-(defun taut-api-fetch-history (channel-id &optional limit)
-  "Fetch recent history for CHANNEL-ID, translating and loading into state."
-  (let* ((params `((channel . ,channel-id)
-                   (limit . ,(or limit 40))))
-          (res (condition-case err
-                   (taut-api--request "conversations.history" params "POST")
-                 (error
-                  (if (string-match-p "not_in_channel" (error-message-string err))
-                      (progn
-                        (message "Taut: Joining channel %s..." channel-id)
-                        (taut-api--request "conversations.join" `((channel . ,channel-id)) "POST")
-                        (taut-api--request "conversations.history" params "POST"))
-                    (signal (car err) (cdr err))))))
+(defun taut-api-fetch-history (channel-id &optional limit latest)
+  "Fetch history for CHANNEL-ID, translating and loading into state.
+If LATEST is specified, fetch messages older than LATEST (for pagination)."
+  (let* ((params (append `((channel . ,channel-id)
+                           (limit . ,(or limit 40)))
+                         (when latest
+                           `((latest . ,latest)))))
+         (res (condition-case err
+                  (taut-api--request "conversations.history" params "POST")
+                (error
+                 (if (string-match-p "not_in_channel" (error-message-string err))
+                     (progn
+                       (message "Taut: Joining channel %s..." channel-id)
+                       (taut-api--request "conversations.join" `((channel . ,channel-id)) "POST")
+                       (taut-api--request "conversations.history" params "POST"))
+                   (signal (car err) (cdr err))))))
          (messages (cdr (assoc 'messages res))))
-    ;; Keep starred/bookmarked messages so we don't lose them when history is refreshed
-    (let ((starred-msgs (cl-remove-if-not #'taut-message-is-starred (gethash channel-id taut-messages))))
-      (setf (gethash channel-id taut-messages) starred-msgs))
+    (unless latest
+      ;; Keep starred/bookmarked messages so we don't lose them when history is refreshed
+      (let ((starred-msgs (cl-remove-if-not #'taut-message-is-starred (gethash channel-id taut-messages))))
+        (setf (gethash channel-id taut-messages) starred-msgs)))
     (dolist (m (nreverse messages))
       (let* ((ts (cdr (assoc 'ts m)))
              (subtype (cdr (assoc 'subtype m)))
@@ -325,7 +329,8 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
                 :is-unread nil
                 :is-mention is-mention
                 :is-starred is-starred)))))))
-    (taut-model-trigger-update)))
+    (taut-model-trigger-update)
+    messages))
 
 (defun taut-api-fetch-replies (channel-id thread-ts)
   "Fetch all thread replies for THREAD-TS in CHANNEL-ID."

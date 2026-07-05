@@ -108,6 +108,12 @@
 (defvar-local taut-expanded-threads nil
   "List of thread-ts currently expanded inline in this buffer.")
 
+(defvar-local taut-message-fetching-p nil
+  "Non-nil if currently fetching older history for infinite scroll.")
+
+(defvar-local taut-message-no-more-history-p nil
+  "Non-nil if there is no more older history to fetch for this channel.")
+
 (defvar taut-code-block-map (make-sparse-keymap)
   "Keymap active inside code blocks.")
 
@@ -285,7 +291,8 @@
   (setq-local view-read-only nil)
   (when (and (boundp 'view-mode) view-mode)
     (view-mode -1))
-  (visual-line-mode 1))
+  (visual-line-mode 1)
+  (add-hook 'post-command-hook #'taut-message--scroll-handler nil t))
 
 ;;;; Rendering Engine
 
@@ -381,6 +388,38 @@ history from API first."
                 (goto-char new-pos)
                 (when w-screen-line
                   (ignore-errors (recenter w-screen-line)))))))))))
+
+(defun taut-message--scroll-handler ()
+  "Check scroll position and trigger infinite scroll if near the top."
+  (when (and (eq major-mode 'taut-message-mode)
+             taut-current-channel-id
+             (not taut-message-fetching-p)
+             (not taut-message-no-more-history-p)
+             (boundp 'taut-bot-token)
+             taut-bot-token)
+    (when (<= (window-start) 300)
+      (taut-message--fetch-older-history))))
+
+(defun taut-message--fetch-older-history ()
+  "Fetch older messages from API for the current channel."
+  (let ((msgs (taut-model-get-messages taut-current-channel-id)))
+    (when msgs
+      (let* ((oldest-msg (car msgs))
+             (oldest-ts (taut-message-ts oldest-msg)))
+        (setq taut-message-fetching-p t)
+        (message "Taut: Loading older messages...")
+        (unwind-protect
+            (let* ((raw-msgs (ignore-errors
+                               (taut-api-fetch-history
+                                taut-current-channel-id 40 oldest-ts)))
+                   (new-count (length raw-msgs)))
+              (if (or (not raw-msgs) (<= new-count 1))
+                  (progn
+                    (setq taut-message-no-more-history-p t)
+                    (message "Taut: Reached start of conversation history."))
+                (message "Taut: Loaded %d older messages." (1- new-count))
+                (taut-message-refresh)))
+          (setq taut-message-fetching-p nil))))))
 
 (defun taut-message--render-history (chan-id)
   "Render message list for CHAN-ID."
@@ -934,7 +973,9 @@ Insert at point with premium faces and interactive links."
     (with-current-buffer buf
       (unless (eq major-mode 'taut-message-mode)
         (taut-message-mode))
-      (setq taut-current-channel-id chan-id)
+      (setq taut-current-channel-id chan-id
+            taut-message-fetching-p nil
+            taut-message-no-more-history-p nil)
       (when (and (boundp 'taut-bot-token) taut-bot-token)
         (condition-case err
             (taut-api-fetch-history chan-id)
