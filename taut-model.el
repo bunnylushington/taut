@@ -234,6 +234,75 @@ Unified Inbox contains:
     ;; Sort items descending by timestamp so most recent is on top
     (sort items (lambda (a b) (string> (or (taut-inbox-item-ts a) "") (or (taut-inbox-item-ts b) ""))))))
 
+(defun taut-model-get-activity-items ()
+  "Query and construct a list of active and recent `taut-inbox-item' objects.
+Includes both unread and read items across DMs, Mentions, and Threads."
+  (let (items)
+    ;; 1 & 2: DMs and Channel Mentions
+    (maphash
+     (lambda (chan-id chan)
+       (let ((msgs (gethash chan-id taut-messages)))
+         (dolist (msg msgs)
+           ;; Skip messages sent by me
+           (unless (equal (taut-message-user-id msg) taut-current-user-id)
+             (cond
+              ;; If it's a DM, any message goes to activity
+              ((eq (taut-channel-type chan) 'dm)
+               (push (make-taut-inbox-item
+                      :id (taut-message-ts msg)
+                      :type 'dm
+                      :channel-id chan-id
+                      :message-id (taut-message-id msg)
+                      :user-id (taut-message-user-id msg)
+                      :title (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
+                      :snippet (taut-message-text msg)
+                      :ts (taut-message-ts msg)
+                      :is-read (not (taut-message-is-unread msg)))
+                     items))
+              ;; If it's a channel mention
+              ((taut-message-is-mention msg)
+               (push (make-taut-inbox-item
+                      :id (taut-message-ts msg)
+                      :type 'mention
+                      :channel-id chan-id
+                      :message-id (taut-message-id msg)
+                      :user-id (taut-message-user-id msg)
+                      :title (format "#%s" (or (taut-channel-name chan) "unknown"))
+                      :snippet (taut-message-text msg)
+                      :ts (taut-message-ts msg)
+                      :is-read (not (taut-message-is-unread msg)))
+                     items)))))))
+     taut-channels)
+
+    ;; 3: Thread updates
+    (dolist (th-ts taut-watched-threads)
+      (let* ((replies (gethash th-ts taut-threads))
+             (last-reply (car (last replies))))
+        ;; We include the thread if there is at least one reply not from us
+        (when last-reply
+          (let ((non-me-replies (cl-remove-if (lambda (r) (equal (taut-message-user-id r) taut-current-user-id)) replies)))
+            (when non-me-replies
+              (let* ((newest-non-me-reply (car (last non-me-replies)))
+                     (chan-id (taut-message-channel-id newest-non-me-reply))
+                     (chan (taut-model-get-channel chan-id))
+                     (chan-name (if chan (or (taut-channel-name chan) "unknown") "unknown"))
+                     (is-dm (and chan (eq (taut-channel-type chan) 'dm))))
+                (push (make-taut-inbox-item
+                       :id th-ts
+                       :type 'thread-update
+                       :channel-id chan-id
+                       :message-id (taut-message-id newest-non-me-reply)
+                       :thread-ts th-ts
+                       :user-id (taut-message-user-id newest-non-me-reply)
+                       :title (if is-dm (format "Thread in DM: @%s" chan-name) (format "Thread: #%s" chan-name))
+                       :snippet (format "Reply: %s" (taut-message-text newest-non-me-reply))
+                       :ts (taut-message-ts newest-non-me-reply)
+                       :is-read (not (taut-message-is-unread newest-non-me-reply)))
+                      items)))))))
+
+    ;; Sort items descending by timestamp so most recent is on top
+    (sort items (lambda (a b) (string> (or (taut-inbox-item-ts a) "") (or (taut-inbox-item-ts b) ""))))))
+
 ;;;; Mutation & Operations Layer
 
 (defvar taut-model--update-timer nil
