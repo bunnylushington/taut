@@ -27,7 +27,7 @@
   :type 'file
   :group 'taut)
 
-(defcustom taut-cache-keep-days 30
+(defcustom taut-cache-keep-days 180
   "Number of days of message history to retain in the persistent cache."
   :type 'integer
   :group 'taut)
