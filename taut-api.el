@@ -425,11 +425,11 @@ Implements Slack's modern 3-step files upload flow:
       (error "Taut: `curl' executable not found on system. Please install curl."))
     
     (message "Taut: Initiating upload for %s (%d bytes)..." filename size)
-    ;; Step 1: getUploadURLExternal
+    ;; Step 1: getUploadURLExternal (uses GET to ensure robust query-param parsing)
     (let* ((get-res (taut-api--request "files.getUploadURLExternal"
                                        `((filename . ,filename)
                                          (length . ,size))
-                                       "POST"))
+                                       "GET"))
            (upload-url (cdr (assoc 'upload_url get-res)))
            (file-id (cdr (assoc 'file_id get-res))))
       (unless (and upload-url file-id)
