@@ -40,6 +40,8 @@
     (define-key map (kbd "C-c C-k") #'taut-compose-abort)
     (define-key map (kbd "C-c C-b") #'taut-compose-insert-code-block)
     (define-key map (kbd "C-c C-l") #'taut-compose-insert-link)
+    (define-key map (kbd "C-c C-u") #'taut-compose-insert-user-mention)
+    (define-key map (kbd "C-c @") #'taut-compose-insert-user-mention)
     (define-key map (kbd "?") #'taut-compose-dispatch)
     map)
   "Keymap for `taut-compose-mode`.")
@@ -181,6 +183,29 @@
   "Insert a Slack-formatted link with URL and LABEL."
   (interactive "sURL: \nsLabel: ")
   (insert (format "<%s|%s>" url label)))
+
+(defun taut-compose-insert-user-mention ()
+  "Insert a Slack user mention selected via completing-read.
+Mentions are formatted as <@U_ID|username>."
+  (interactive)
+  (let ((candidates nil))
+    (maphash (lambda (uid user)
+               (let* ((username (taut-user-username user))
+                      (real-name (taut-user-real-name user))
+                      (display (if real-name
+                                   (format "@%s (%s)" username real-name)
+                                 (format "@%s" username))))
+                 (push (cons display uid) candidates)))
+             taut-users)
+    (if (null candidates)
+        (message "Taut: No users available to mention.")
+      (let* ((sorted-candidates (sort candidates (lambda (a b) (string< (car a) (car b)))))
+             (choice (completing-read "Mention User: " sorted-candidates nil t))
+             (uid (cdr (assoc choice sorted-candidates)))
+             (user (gethash uid taut-users))
+             (username (and user (taut-user-username user))))
+        (when uid
+          (insert (format "<@%s|%s>" uid (or username uid))))))))
 
 ;;;; Interactive Dispatch Triggers (r / R)
 

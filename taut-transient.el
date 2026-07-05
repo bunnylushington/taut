@@ -39,6 +39,7 @@
 (declare-function taut-compose-abort "taut-compose")
 (declare-function taut-compose-insert-code-block "taut-compose")
 (declare-function taut-compose-insert-link "taut-compose")
+(declare-function taut-compose-insert-user-mention "taut-compose")
 
 ;;;###autoload
 (transient-define-prefix taut-dispatch ()
@@ -79,7 +80,8 @@
     ("C-k" "Abort/Discard Draft"  taut-compose-abort)]
    ["Formatting Helpers"
     ("b" "Insert Code Block"     taut-compose-insert-code-block)
-    ("l" "Insert Link"           taut-compose-insert-link)]])
+    ("l" "Insert Link"           taut-compose-insert-link)
+    ("u" "Insert User Mention"   taut-compose-insert-user-mention)]])
 
 (provide 'taut-transient)
 ;;; taut-transient.el ends here
