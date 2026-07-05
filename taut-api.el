@@ -292,7 +292,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
       ;; Keep starred/bookmarked messages so we don't lose them when history is refreshed
       (let ((starred-msgs (cl-remove-if-not #'taut-message-is-starred (gethash channel-id taut-messages))))
         (setf (gethash channel-id taut-messages) starred-msgs)))
-    (dolist (m (nreverse messages))
+    (setq messages (nreverse messages))
+    (dolist (m messages)
       (let* ((ts (cdr (assoc 'ts m)))
              (subtype (cdr (assoc 'subtype m)))
              (user-id (or (cdr (assoc 'user m)) (cdr (assoc 'bot_id m)) "unknown")))

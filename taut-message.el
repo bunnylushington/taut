@@ -397,7 +397,13 @@ history from API first."
              (not taut-message-no-more-history-p)
              (boundp 'taut-bot-token)
              taut-bot-token)
-    (when (<= (window-start) 300)
+    ;; To avoid false triggers during initial buffer opening (where window-start
+    ;; is temporarily 1 before redisplay scrolls to the bottom), we verify
+    ;; that the window-start is actually visible and point is not at the very
+    ;; end of a large buffer.
+    (when (and (<= (window-start) 300)
+               (or (< (point-max) 1000)
+                   (< (point) (- (point-max) 100))))
       (taut-message--fetch-older-history))))
 
 (defun taut-message--fetch-older-history ()
@@ -409,9 +415,13 @@ history from API first."
         (setq taut-message-fetching-p t)
         (message "Taut: Loading older messages...")
         (unwind-protect
-            (let* ((raw-msgs (ignore-errors
-                               (taut-api-fetch-history
-                                taut-current-channel-id 40 oldest-ts)))
+            (let* ((raw-msgs (condition-case err
+                                 (taut-api-fetch-history
+                                  taut-current-channel-id 40 oldest-ts)
+                               (error
+                                (message "Taut: Error loading older messages: %s"
+                                         (error-message-string err))
+                                nil)))
                    (new-count (length raw-msgs)))
               (if (or (not raw-msgs) (<= new-count 1))
                   (progn
@@ -994,6 +1004,7 @@ Insert at point with premium faces and interactive links."
         (switch-to-buffer buf)))
     
     (goto-char (point-max))
+    (redisplay t)
     buf))
 
 (defun taut-message-send ()
