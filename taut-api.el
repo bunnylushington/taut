@@ -251,7 +251,8 @@ Parsed JSON booleans are t or :json-false."
                     ((or is-im is-mpim) 'dm)
                     (is-private 'private)
                     (t 'public)))
-             (is-member (taut-api--bool (cdr (assoc 'is_member c)))))
+             (is-member (let ((val (assoc 'is_member c)))
+                           (if val (taut-api--bool (cdr val)) t))))
         (when (or (not taut-only-show-subscribed-channels)
                   is-im
                   is-mpim
