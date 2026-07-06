@@ -178,7 +178,7 @@ Stop simulators, close WebSocket, kill buffers, and restore windows."
     ;; 4. Tab and Frame Cleanup
     (unless noninteractive
       ;; Delete all "Taut" frames
-      (let ((taut-frames (cl-remove-if-not (lambda (f) (equal (frame-parameter f 'name) "Taut")) (frame-list))))
+      (let ((taut-frames (cl-remove-if-not (lambda (f) (equal (frame-parameter f 'name) taut-workspace-name)) (frame-list))))
         (dolist (f taut-frames)
           (if (> (length (frame-list)) 1)
               (ignore-errors (delete-frame f))
@@ -190,9 +190,9 @@ Stop simulators, close WebSocket, kill buffers, and restore windows."
       ;; Delete all "Taut" tabs in all remaining frames
       (dolist (frame (frame-list))
         (with-selected-frame frame
-          (while (taut--tab-exists-p "Taut")
+          (while (taut--tab-exists-p taut-workspace-name)
             (ignore-errors
-              (taut--close-tab-by-name "Taut"))))))
+              (taut--close-tab-by-name taut-workspace-name))))))
     
     ;; 5. Delete remaining Taut windows on other frames/tabs
     (dolist (frame (frame-list))

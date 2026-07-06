@@ -18,6 +18,9 @@
 
 ;;;; Customization and Variables
 
+(defconst taut-workspace-name "🌑 Taut"
+  "The name of the Taut workspace tab or frame.")
+
 (defgroup taut nil
   "An elegant Slack client for Emacs."
   :group 'applications)
@@ -26,11 +29,10 @@
   "Whether and how to consolidate Taut windows into a single tab or frame.
 Accepted values are:
   - nil:     Do not consolidate.
-  - `frame': Group all Taut windows in a single frame named \"Taut\".
-  - `tab':   Group all Taut windows in a single tab named \"Taut\".
-  - `auto':  Use a tab named \"Taut\" if the `tab-bar' is active
-            (i.e., `tab-bar-mode' is enabled), and a frame named
-            \"Taut\" otherwise."
+  - `frame': Group all Taut windows in a single frame.
+  - `tab':   Group all Taut windows in a single tab.
+  - `auto':  Use a tab if the `tab-bar' is active
+            (i.e., `tab-bar-mode' is enabled), and a frame otherwise."
   :type '(choice (const :tag "Do not consolidate" nil)
                  (const :tag "Single frame" frame)
                  (const :tag "Single tab" tab)
@@ -56,25 +58,25 @@ Accepted values are:
                 (tab-bar-tabs))))
 
 (defun taut-ensure-tab ()
-  "Ensure a tab named \"Taut\" exists and is selected in the current frame."
+  "Ensure a tab named `taut-workspace-name' exists and is selected in the current frame."
   (unless noninteractive
     (require 'tab-bar)
     (unless tab-bar-mode
       (tab-bar-mode 1))
-    (if (taut--tab-exists-p "Taut")
-        (tab-bar-select-tab-by-name "Taut")
+    (if (taut--tab-exists-p taut-workspace-name)
+        (tab-bar-select-tab-by-name taut-workspace-name)
       (tab-bar-new-tab)
-      (tab-bar-rename-tab "Taut"))))
+      (tab-bar-rename-tab taut-workspace-name))))
 
 (defun taut-ensure-frame ()
-  "Ensure a frame named \"Taut\" exists and is focused."
+  "Ensure a frame named `taut-workspace-name' exists and is focused."
   (if noninteractive
       (selected-frame)
-    (let ((frame (cl-find-if (lambda (f) (equal (frame-parameter f 'name) "Taut"))
+    (let ((frame (cl-find-if (lambda (f) (equal (frame-parameter f 'name) taut-workspace-name))
                             (frame-list))))
       (if frame
           (select-frame-set-input-focus frame)
-        (let ((new-frame (make-frame '((name . "Taut")))))
+        (let ((new-frame (make-frame `((name . ,taut-workspace-name)))))
           (select-frame-set-input-focus new-frame)
           new-frame)))))
 
