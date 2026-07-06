@@ -463,10 +463,10 @@
       (call-interactively action))
      (bookmark-msg
       (taut-sidebar-open-bookmark bookmark-msg))
-     (chan-id
-      (taut-sidebar-open-channel chan-id))
      (thread-ts
       (taut-sidebar-open-thread thread-ts chan-id))
+     (chan-id
+      (taut-sidebar-open-channel chan-id))
      (section
       (taut-sidebar-toggle-section section)))))
 

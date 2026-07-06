@@ -17,17 +17,25 @@
   (add-to-list 'load-path (expand-file-name ".." default-directory))
   (add-to-list 'load-path default-directory))
 
+;; Initialize package.el to load installed packages (for CI/package.el environments)
+(require 'package)
+(package-initialize)
+
 ;; Automatically load straight.el packages in batch mode (for websocket, transient, etc.)
 (let ((straight-build-dir (expand-file-name "~/.emacs.d/straight/build/")))
   (when (file-directory-p straight-build-dir)
     (dolist (dir (directory-files straight-build-dir t "^[a-zA-Z0-9]"))
-      (when (file-directory-p dir)
+      (when (and (file-directory-p dir)
+                 (not (string-suffix-p "/taut" dir)))
         (add-to-list 'load-path dir)))))
 
 ;; Load all core source files
 (require 'taut-model)
 (require 'taut-api)
 (require 'taut-cache)
+;; Force all tests to use a temporary SQLite cache database path
+;; to prevent running tests from writing to or altering the production database.
+(setq taut-cache-db-path (make-temp-file "taut-cache-test-db-"))
 (require 'taut-socket)
 (require 'taut-sidebar)
 (require 'taut-inbox)
