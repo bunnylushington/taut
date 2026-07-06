@@ -351,6 +351,46 @@
                                'mouse-face 'highlight))
     (insert "\n")))
 
+(defun taut-sidebar--render-thread-item (th-ts)
+  "Render a two-line sidebar item for thread TH-TS."
+  (let* ((replies (gethash th-ts taut-threads))
+         (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
+         (has-unreads (> unread-reply-count 0))
+         (line-start (point))
+         (root-msg (taut-model-get-message-by-ts th-ts))
+         (chan-id (or (and root-msg (taut-message-channel-id root-msg))
+                      (and replies (taut-message-channel-id (car replies)))))
+         (chan (and chan-id (taut-model-get-channel chan-id)))
+         (chan-display-name
+          (if chan
+              (car (taut-sidebar--resolve-display-names (taut-channel-name chan)))
+            (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
+              (format "Thread %s" ts-suffix))))
+         (user-id (or (and root-msg (taut-message-user-id root-msg))
+                      (and replies (taut-message-user-id (car replies)))))
+         (user (and user-id (taut-model-get-user user-id)))
+         (user-name (if user
+                        (or (taut-user-username user)
+                            (taut-user-real-name user)
+                            "unknown")
+                      "unknown")))
+    ;; Line 1: Icon and Channel/DM Name
+    (insert "  " (if has-unreads "● " (taut-sidebar--get-icon (if chan (taut-channel-type chan) 'thread))))
+    (insert (propertize chan-display-name
+                        'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel)))
+    (when has-unreads
+      (insert (propertize (format " (%d)" unread-reply-count)
+                          'face 'taut-sidebar-badge-unread)))
+    (insert "\n")
+    ;; Line 2: Originating user
+    (insert (propertize (format "     by @%s" user-name) 'face 'font-lock-comment-face))
+    
+    ;; Add properties for clicking/activating
+    (add-text-properties line-start (point)
+                         (list 'taut-thread-ts th-ts
+                               'taut-channel-id chan-id
+                               'mouse-face 'highlight))))
+
 (defun taut-sidebar--render-section-threads (threads)
   "Render the Threads section with specified THREADS."
   (let* ((sym 'threads)
@@ -365,24 +405,8 @@
       (if (null threads)
           (insert "  (no watched threads)\n")
         (dolist (th-ts threads)
-          ;; Render a summary line for each watched thread
-          (let* ((replies (gethash th-ts taut-threads))
-                 (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
-                 (has-unreads (> unread-reply-count 0))
-                 (line-start (point))
-                 (chan-id (and replies (taut-message-channel-id (car replies)))))
-            (insert "  " (if has-unreads "● " (taut-sidebar--get-icon 'thread)))
-            (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
-              (insert (propertize (format "Thread %s" ts-suffix)
-                                  'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))))
-            (when has-unreads
-              (insert (propertize (format " (%d)" unread-reply-count)
-                                  'face 'taut-sidebar-badge-unread)))
-            (add-text-properties line-start (point)
-                                 (list 'taut-thread-ts th-ts
-                                       'taut-channel-id chan-id
-                                       'mouse-face 'highlight))
-            (insert "\n")))))
+          (taut-sidebar--render-thread-item th-ts)
+          (insert "\n"))))
     (insert "\n")))
 
 (defun taut-sidebar--render-section-hidden (hidden-chans hidden-threads)
@@ -403,23 +427,8 @@
           (taut-sidebar--render-channel-line chan))
         ;; Render threads from hidden channels
         (dolist (th-ts hidden-threads)
-          (let* ((replies (gethash th-ts taut-threads))
-                 (unread-reply-count (cl-count-if #'taut-message-is-unread replies))
-                 (has-unreads (> unread-reply-count 0))
-                 (line-start (point))
-                 (chan-id (and replies (taut-message-channel-id (car replies)))))
-            (insert "  " (if has-unreads "● " (taut-sidebar--get-icon 'thread)))
-            (let ((ts-suffix (if (and th-ts (>= (length th-ts) 5)) (substring th-ts -5) (or th-ts ""))))
-              (insert (propertize (format "Thread %s" ts-suffix)
-                                  'face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))))
-            (when has-unreads
-              (insert (propertize (format " (%d)" unread-reply-count)
-                                  'face 'taut-sidebar-badge-unread)))
-            (add-text-properties line-start (point)
-                                 (list 'taut-thread-ts th-ts
-                                       'taut-channel-id chan-id
-                                       'mouse-face 'highlight))
-            (insert "\n")))))
+          (taut-sidebar--render-thread-item th-ts)
+          (insert "\n"))))
     (insert "\n")))
 
 (defun taut-sidebar--user-status-indicator (user)

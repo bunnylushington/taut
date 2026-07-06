@@ -63,10 +63,11 @@
         
         ;; Check text properties for a thread
         (goto-char (point-min))
-        (let ((pos (search-forward "Thread .0001" nil t)))
+        (let ((pos (search-forward "by @alice" nil t)))
           (should pos)
-          (backward-char 2)
-          (should (equal (get-text-property (point) 'taut-thread-ts) "1688460000.0001")))))))
+          (backward-char 3)
+          (should (equal (get-text-property (point) 'taut-thread-ts) "1688460000.0001"))
+          (should (equal (get-text-property (point) 'taut-channel-id) "C_DEV")))))))
 
 (ert-deftest taut-sidebar-toggle-section-test ()
   "Test that collapsing sections prevents rendering their items."
