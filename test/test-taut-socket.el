@@ -299,5 +299,66 @@
       (should (eq (taut-user-presence user1) 'online))
       (should (eq (taut-user-presence user2) 'online)))))
 
+(ert-deftest taut-socket-notify-message-test ()
+  "Test formatting and routing of incoming messages (echo area and optional OS notifications)."
+  (taut-model-clear-all)
+  (let ((alice (make-taut-user :id "U_ALICE" :username "alice"))
+        (bob (make-taut-user :id "U_BOB" :username "bob"))
+        (chan-pub (make-taut-channel :id "C_TEST" :name "test-channel" :type 'public))
+        (chan-dm (make-taut-channel :id "D_BOB" :name "bob" :type 'dm))
+        logged-messages
+        alert-called)
+    (taut-model-add-user alice)
+    (taut-model-add-user bob)
+    (taut-model-add-channel chan-pub)
+    (taut-model-add-channel chan-dm)
+    
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) logged-messages)))
+              ((symbol-function 'require)
+               (lambda (feature &rest args)
+                 (if (eq feature 'alert)
+                     t
+                   (apply 'require feature args))))
+              ((symbol-function 'alert)
+               (lambda (text &rest args)
+                 (setq alert-called (cons text args))
+                 nil)))
+      
+      ;; 1. Standard channel message (no OS alert)
+      (let ((taut-enable-os-notifications nil))
+        (setq logged-messages nil
+              alert-called nil)
+        (taut-socket--notify-message "C_TEST" "U_ALICE" "Hello public channel!")
+        (should (equal logged-messages '("Message on #test-channel from @alice: Hello public channel!")))
+        (should-not alert-called))
+      
+      ;; 2. DM message (no OS alert)
+      (let ((taut-enable-os-notifications nil))
+        (setq logged-messages nil
+              alert-called nil)
+        (taut-socket--notify-message "D_BOB" "U_BOB" "Hi there in DM!")
+        (should (equal logged-messages '("Message from @bob: Hi there in DM!")))
+        (should-not alert-called))
+      
+      ;; 3. DM message with OS alert enabled
+      (let ((taut-enable-os-notifications t))
+        (setq logged-messages nil
+              alert-called nil)
+        (taut-socket--notify-message "D_BOB" "U_BOB" "This should trigger alert!")
+        (should (equal logged-messages '("Message from @bob: This should trigger alert!")))
+        (should (equal alert-called '("This should trigger alert!" :title "Message from @bob"))))
+      
+      ;; 4. Truncation test (> 40 chars)
+      (let ((taut-enable-os-notifications t)
+            (long-text "This is an extremely long message that should definitely be truncated because it exceeds the forty character limit"))
+        (setq logged-messages nil
+              alert-called nil)
+        (taut-socket--notify-message "C_TEST" "U_ALICE" long-text)
+        (should (equal logged-messages '("Message on #test-channel from @alice: This is an extremely long message that s [...]")))
+        ;; Truncated text should be passed to alert as well
+        (should (equal alert-called '("This is an extremely long message that s [...]" :title "Message on #test-channel from @alice")))))))
+
 (provide 'test-taut-socket)
 ;;; test-taut-socket.el ends here

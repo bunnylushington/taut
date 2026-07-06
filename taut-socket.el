@@ -47,6 +47,31 @@
 (defvar taut-socket-last-event-type nil
   "Type string of the last received event.")
 
+(defcustom taut-enable-os-notifications nil
+  "When non-nil, attempt to send a native OS notification on new incoming messages using the `alert' library if available."
+  :type 'boolean
+  :group 'taut)
+
+(defun taut-socket--notify-message (chan-id user-id text)
+  "Format and notify incoming message to echo area and optionally OS."
+  (let* ((user (taut-model-get-user user-id))
+         (username (if user (taut-user-username user) user-id))
+         (channel (taut-model-get-channel chan-id))
+         (chan-type (and channel (taut-channel-type channel)))
+         (chan-name (if channel (taut-channel-name channel) chan-id))
+         (truncated-text (if (> (length text) 40)
+                             (concat (substring text 0 40) " [...]")
+                           text))
+         (title (if (eq chan-type 'dm)
+                    (format "Message from @%s" username)
+                  (format "Message on #%s from @%s" chan-name username)))
+         (notify-msg (format "%s: %s" title truncated-text)))
+    ;; 1. Display in Emacs echo area
+    (message "%s" notify-msg)
+    ;; 2. Optional OS Alert Notification (cross-platform using `alert` package)
+    (when (and taut-enable-os-notifications (require 'alert nil t))
+      (funcall 'alert truncated-text :title title))))
+
 (defun taut-socket-calculate-retry-interval ()
   "Calculate the retry interval using exponential backoff with jitter."
   (let* ((base (min taut-socket-max-retry-interval
@@ -253,8 +278,7 @@
                       (text (taut-api-unescape-html (taut-api--format-file-shares event full-text)))
                       (ts (cdr (assoc 'ts event)))
                       (thread-ts (cdr (assoc 'thread_ts event))))
-                 (message "Taut Socket: Incoming message on channel %s from user %s: %s"
-                          chan-id user-id (substring text 0 (min (length text) 40)))
+                 (taut-socket--notify-message chan-id user-id text)
 
                  (when ts
                    (let ((is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
