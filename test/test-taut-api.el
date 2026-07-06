@@ -173,5 +173,44 @@
           (should (= (length msgs) 1))
           (should (equal (taut-message-text (car msgs)) "Hello development!")))))))
 
+(ert-deftest taut-api-get-or-fetch-channel-test ()
+  "Test that taut-api-get-or-fetch-channel retrieves cached channels, or fetches on-demand."
+  (taut-model-clear-all)
+  (let ((taut-bot-token "mock-token"))
+    ;; Case 1: Channel is already in cache
+    (let ((c-general (make-taut-channel :id "C_GENERAL" :name "general" :type 'public)))
+      (taut-model-add-channel c-general)
+      (should (equal (taut-api-get-or-fetch-channel "C_GENERAL") c-general)))
+    
+    ;; Case 2: Channel is not in cache, fetch it on-demand
+    (let ((requests nil))
+      (cl-letf (((symbol-function 'taut-api--request)
+                 (lambda (endpoint params method &optional _apptoken)
+                   (push (list endpoint params method) requests)
+                   '((ok . t)
+                     (channel . ((id . "C_PRIVATE_FE")
+                                 (name . "private-feed")
+                                 (is_private . t)
+                                 (unread_count . 5)
+                                 (unread_count_display_messages . 2)
+                                 (topic . ((value . "Topics!")))
+                                 (purpose . ((value . "Purposes!")))))))))
+        (let ((chan (taut-api-get-or-fetch-channel "C_PRIVATE_FE")))
+          (should chan)
+          (should (equal (taut-channel-id chan) "C_PRIVATE_FE"))
+          (should (equal (taut-channel-name chan) "private-feed"))
+          (should (eq (taut-channel-type chan) 'private))
+          (should (= (taut-channel-unread-count chan) 5))
+          (should (= (taut-channel-mention-count chan) 2))
+          (should (equal (taut-channel-topic chan) "Topics!"))
+          (should (equal (taut-channel-purpose chan) "Purposes!"))
+          
+          ;; Verify cache population
+          (should (equal (taut-model-get-channel "C_PRIVATE_FE") chan))
+          
+          ;; Verify request payload
+          (should (= (length requests) 1))
+          (should (equal (car requests) '("conversations.info" ((channel . "C_PRIVATE_FE")) "GET"))))))))
+
 (provide 'test-taut-api)
 ;;; test-taut-api.el ends here

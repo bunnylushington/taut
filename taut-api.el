@@ -297,6 +297,47 @@ Parsed JSON booleans are t or :json-false."
             :purpose (cdr (assoc 'value (cdr (assoc 'purpose c))))))))))
   (message "Taut: Synced %d active conversations." (hash-table-count taut-channels)))
 
+(defun taut-api-get-or-fetch-channel (channel-id)
+  "Retrieve `taut-channel' for CHANNEL-ID from cache, or fetch it on-demand from Slack."
+  (let ((chan (taut-model-get-channel channel-id)))
+    (if (or chan (not (and (boundp 'taut-bot-token) taut-bot-token)))
+        chan
+      (condition-case nil
+          (let* ((res (taut-api--request "conversations.info" `((channel . ,channel-id)) "GET"))
+                 (c (cdr (assoc 'channel res))))
+            (when c
+              (let* ((id (cdr (assoc 'id c)))
+                     (is-im (taut-api--bool (cdr (assoc 'is_im c))))
+                     (is-mpim (taut-api--bool (cdr (assoc 'is_mpim c))))
+                     (is-private (taut-api--bool (cdr (assoc 'is_private c))))
+                     (unread-count (or (cdr (assoc 'unread_count c)) 0))
+                     (name (or (cond
+                                (is-im
+                                 (let* ((uid (cdr (assoc 'user c)))
+                                        (user (taut-model-get-user uid)))
+                                   (or (and user (taut-user-username user)) (concat "user-" (or uid "unknown")))))
+                                (is-mpim
+                                 (taut-api--clean-mpim-name (cdr (assoc 'name c))))
+                                (t (cdr (assoc 'name c))))
+                               id
+                               "unknown"))
+                     (type (cond
+                            ((or is-im is-mpim) 'dm)
+                            (is-private 'private)
+                            (t 'public)))
+                     (new-chan (make-taut-channel
+                                :id id
+                                :name name
+                                :type type
+                                :unread-count unread-count
+                                :mention-count (or (cdr (assoc 'unread_count_display_messages c)) 0)
+                                :is-starred (taut-api--bool (cdr (assoc 'is_starred c)))
+                                :topic (cdr (assoc 'value (cdr (assoc 'topic c))))
+                                :purpose (cdr (assoc 'value (cdr (assoc 'purpose c)))))))
+                (taut-model-add-channel new-chan)
+                new-chan)))
+        (error nil)))))
+
 (defun taut-api-fetch-starred ()
   "Fetch starred items from Slack and mark channels and messages as starred."
   (interactive)

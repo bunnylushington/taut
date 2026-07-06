@@ -274,7 +274,7 @@ Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
          (sender-part (propertize sender-display 'face 'taut-inbox-title))
          ;; Channel badge if any
          (chan-id (taut-inbox-item-channel-id item))
-         (chan (taut-model-get-channel chan-id))
+         (chan (taut-api-get-or-fetch-channel chan-id))
          (channel-part
           (if (and chan (not (eq (taut-channel-type chan) 'dm)))
               (let* ((prefix (if (eq (taut-channel-type chan) 'private) "🔒" "#"))

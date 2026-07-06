@@ -116,7 +116,7 @@ replies from API first."
     (if (null root-msg)
         (insert "  Error: Could not locate thread root message.\n")
       (let ((replies (taut-model-get-thread-replies thread-ts))
-            (chan (taut-model-get-channel root-chan-id)))
+            (chan (taut-api-get-or-fetch-channel root-chan-id)))
         
         ;; Header Banner
         (insert (propertize " 💬 THREAD DISCUSSION " 'face 'taut-thread-root-header)

@@ -998,7 +998,7 @@ Insert at point with premium faces and interactive links."
 (defun taut-message-open (chan-id &optional other-window)
   "Switch to the conversation buffer for CHAN-ID.
 If OTHER-WINDOW is non-nil, open the buffer in another window."
-  (let* ((chan (taut-model-get-channel chan-id))
+  (let* ((chan (taut-api-get-or-fetch-channel chan-id))
          (chan-type (if chan (taut-channel-type chan) 'public))
          (chan-name (if chan (taut-channel-name chan) chan-id))
          (buf-name (if (eq chan-type 'dm)
