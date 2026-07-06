@@ -24,6 +24,8 @@
 (declare-function taut-code-block-dispatch "taut-transient")
 
 (declare-function taut-dispatch "taut-transient")
+(declare-function taut-search-quick "taut-search")
+
 
 ;;;; Faces
 
@@ -289,6 +291,7 @@
 (define-key taut-message-mode-map (kbd "M") #'taut-message-mark-all-read)
 (define-key taut-message-mode-map (kbd "H") #'taut-huddle-join)
 (define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
+(define-key taut-message-mode-map (kbd "/") #'taut-search-quick)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
   "Major mode for a Taut Slack conversation buffer.
@@ -1344,6 +1347,21 @@ Uses a premium autocomplete picker mapping emojis and shortcodes."
             (thread-ts (taut-message-thread-ts msg)))
         (taut-compose-open chan-id thread-ts nil ts text))))))
 
+
+;;;###autoload
+(defun taut-message-goto-ts (ts)
+  "Move point to the message with timestamp TS in the current buffer.
+Returns non-nil if found."
+  (let ((pos (point-min))
+        found)
+    (while (and pos (< pos (point-max)) (not found))
+      (let ((next-change (next-single-property-change pos 'taut-message-ts)))
+        (if (equal (get-text-property pos 'taut-message-ts) ts)
+            (progn
+              (goto-char pos)
+              (setq found t))
+          (setq pos next-change))))
+    found))
 
 ;; Hook auto-updates
 (add-hook 'taut-model-updated-hook #'taut-message-refresh-all)

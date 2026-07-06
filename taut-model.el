@@ -261,6 +261,12 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
                   star-a
                 (string< (or (taut-channel-name a) "") (or (taut-channel-name b) ""))))))))
 
+(defun taut-model-get-users-list ()
+  "Return a list of all `taut-user` objects in memory."
+  (let (users)
+    (maphash (lambda (_id user) (push user users)) taut-users)
+    (nreverse users)))
+
 (defun taut-model-channel-active-last-30-days-p (channel-id)
   "Check if CHANNEL-ID has had message activity in the last 30 days."
   (let* ((msgs (taut-model-get-messages channel-id))

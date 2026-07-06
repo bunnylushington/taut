@@ -16,6 +16,7 @@
 
 (declare-function taut-dispatch "taut-transient")
 (declare-function taut-inbox-show "taut-inbox")
+(declare-function taut-search-quick "taut-search")
 
 ;;;; Faces
 
@@ -107,6 +108,7 @@
     (define-key map (kbd "i") #'taut-inbox-show)
     (define-key map (kbd "H") #'taut-huddle-join)
     (define-key map (kbd "?") #'taut-dispatch)
+    (define-key map (kbd "/") #'taut-search-quick)
     map)
   "Keymap for `taut-sidebar-mode`.")
 

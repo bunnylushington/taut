@@ -19,6 +19,8 @@
 (declare-function taut-dispatch "taut-transient")
 (declare-function taut-message-open "taut-message" (chan-id &optional other-window))
 (declare-function taut-thread-open "taut-thread" (thread-ts &optional channel-id))
+(declare-function taut-search-quick "taut-search")
+
 
 ;;;; Faces
 
@@ -121,6 +123,7 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 (define-key taut-inbox-mode-map (kbd "m") #'taut-inbox-filter-mentions)
 (define-key taut-inbox-mode-map (kbd "t") #'taut-inbox-filter-threads)
 (define-key taut-inbox-mode-map (kbd "?") #'taut-dispatch)
+(define-key taut-inbox-mode-map (kbd "/") #'taut-search-quick)
 
 (define-derived-mode taut-inbox-mode special-mode "Slack Activity"
   "Major mode for Taut Slack Activity.

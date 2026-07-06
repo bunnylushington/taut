@@ -20,6 +20,8 @@
 (declare-function taut-dispatch "taut-transient")
 (declare-function taut-message-upload-file "taut-message")
 (declare-function taut-message-edit "taut-message")
+(declare-function taut-search-quick "taut-search")
+
 
 ;;;; Faces
 
@@ -58,6 +60,7 @@
 (define-key taut-thread-mode-map (kbd "c") #'taut-message-copy-at-point)
 (define-key taut-thread-mode-map (kbd "H") #'taut-huddle-join)
 (define-key taut-thread-mode-map (kbd "?") #'taut-dispatch)
+(define-key taut-thread-mode-map (kbd "/") #'taut-search-quick)
 
 (define-derived-mode taut-thread-mode special-mode "Taut-Thread"
   "Major mode for the Taut side-by-side Thread Discussion view.

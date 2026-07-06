@@ -287,5 +287,59 @@ Creates the necessary tables if they do not exist."
       (sqlite-execute db "DELETE FROM watched_threads")
       (message "Taut: Cache cleared successfully."))))
 
+(defun taut-cache-search-messages (query &optional channel-id user-id)
+  "Search local SQLite messages matching QUERY.
+QUERY is a search term which will be matched using SQL LIKE syntax (e.g. %term%).
+If CHANNEL-ID is specified, limit results to that channel.
+If USER-ID is specified, limit results to messages from that user."
+  (let ((db (taut-cache--get-db)))
+    (when db
+      (let* ((like-query (concat "%" query "%"))
+             (sql "SELECT id, channel_id, user_id, text, ts, thread_ts, reply_count, reactions_json, is_unread, is_mention, is_starred
+                   FROM messages
+                   WHERE text LIKE ?")
+             (params (list like-query)))
+        (when channel-id
+          (setq sql (concat sql " AND channel_id = ?"))
+          (push channel-id params))
+        (when user-id
+          (setq sql (concat sql " AND user_id = ?"))
+          (push user-id params))
+        (setq sql (concat sql " ORDER BY ts DESC"))
+        (let ((rows (sqlite-select db sql (nreverse params)))
+              results)
+          (dolist (row rows)
+            (let* ((id (nth 0 row))
+                   (channel-id (nth 1 row))
+                   (user-id (nth 2 row))
+                   (text (nth 3 row))
+                   (ts (nth 4 row))
+                   (thread-ts (nth 5 row))
+                   (reply-count (nth 6 row))
+                   (reactions-json (nth 7 row))
+                   (is-unread (nth 8 row))
+                   (is-mention (nth 9 row))
+                   (is-starred (nth 10 row))
+                   (reactions (unless (or (null reactions-json) (string= reactions-json ""))
+                                (ignore-errors
+                                  (let ((json-array-type 'list)
+                                        (json-object-type 'alist)
+                                        (json-key-type 'symbol))
+                                    (json-read-from-string reactions-json)))))
+                   (msg (make-taut-message
+                         :id id
+                         :channel-id channel-id
+                         :user-id user-id
+                         :text text
+                         :ts ts
+                         :thread-ts thread-ts
+                         :reply-count reply-count
+                         :reactions reactions
+                         :is-unread (= is-unread 1)
+                         :is-mention (= is-mention 1)
+                         :is-starred (= is-starred 1))))
+              (push msg results)))
+          (nreverse results))))))
+
 (provide 'taut-cache)
 ;;; taut-cache.el ends here

@@ -68,6 +68,9 @@
 (declare-function taut-compose-insert-code-block "taut-compose")
 (declare-function taut-compose-insert-link "taut-compose")
 (declare-function taut-compose-insert-user-mention "taut-compose")
+(declare-function taut-search-quick "taut-search")
+(declare-function taut-search-advanced "taut-search")
+
 
 ;;;###autoload
 (transient-define-prefix taut-dispatch ()
@@ -79,6 +82,8 @@
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
     ("I" "Show/Focus Slack Activity" taut-inbox-show)
     ("W" "Reset Layout"        taut-reset-layout)
+    ("F" "Search / Find"       taut-search-quick)
+    ("P" "Advanced Search"     taut-search-advanced)
     ("q" "Quit / Bury Pane"    quit-window :if (lambda () (not (eq major-mode 'taut-thread-mode))))
     ("Q" "Hard Quit Taut"      taut-quit)]
    

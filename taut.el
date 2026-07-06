@@ -35,6 +35,7 @@
 (require 'taut-socket)
 (require 'taut-transient)
 (require 'taut-compose)
+(require 'taut-search)
 
 ;;;; Global Keybindings for Jumper
 (define-key taut-sidebar-mode-map (kbd "j") #'taut-jump)

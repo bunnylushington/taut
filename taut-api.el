@@ -809,12 +809,19 @@ Uses the active bearer token for authorization."
         (apply #'call-process curl-bin nil t nil args)))
     (message "Taut: Successfully downloaded file to %s" local-path)))
 
-(defun taut-api-delete-message (channel-id ts)
-  "Delete a message with timestamp TS in CHANNEL-ID."
-  (taut-api--request "chat.delete"
-                     `((channel . ,channel-id)
-                       (ts . ,ts))
-                     "POST"))
+(defun taut-api-search-messages (query &optional sort sort-dir page count)
+  "Search Slack workspace messages matching QUERY.
+Optional arguments:
+- SORT: 'timestamp' or 'score'
+- SORT-DIR: 'asc' or 'desc'
+- PAGE: page number to retrieve
+- COUNT: number of items per page"
+  (let ((params `((query . ,query))))
+    (when sort (push `(sort . ,sort) params))
+    (when sort-dir (push `(sort_dir . ,sort-dir) params))
+    (when page (push `(page . ,page) params))
+    (when count (push `(count . ,count) params))
+    (taut-api--request "search.messages" params "GET")))
 
 (provide 'taut-api)
 ;;; taut-api.el ends here
