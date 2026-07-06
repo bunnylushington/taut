@@ -189,6 +189,21 @@ Stop simulators, close WebSocket, kill buffers, and restore windows."
     
     (message "Taut: Hard quit complete.")))
 
+(defvar taut-mock-timer nil
+  "Timer object running the background simulator (obsolete stub).")
+
+;;;###autoload
+(defun taut-mock-stop ()
+  "Stop the background simulator (obsolete stub to prevent autoload failures)."
+  (interactive)
+  (message "Taut: Mock simulator is disabled in this version."))
+
+;;;###autoload
+(defun taut-mock-start ()
+  "Start the background simulator (obsolete stub to prevent autoload failures)."
+  (interactive)
+  (message "Taut: Mock simulator is disabled in this version."))
+
 ;;;###autoload
 (defun taut-reload ()
   "Reload all Taut Emacs Lisp source files dynamically.

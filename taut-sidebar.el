@@ -216,6 +216,21 @@
       (let ((chan (taut-model-get-channel chan-id)))
         (and chan (taut-channel-is-hidden chan))))))
 
+(defun taut-sidebar--thread-recent-p (th-ts &optional current-time)
+  "Return non-nil if thread TH-TS has activity within the last 14 days.
+Activity means either the root timestamp TH-TS itself, or any reply timestamp
+found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-time`)."
+  (let* ((now (or current-time (float-time)))
+         (limit (- now (* 14 24 60 60)))
+         (root-time (string-to-number th-ts))
+         (max-time root-time)
+         (replies (gethash th-ts taut-threads)))
+    (dolist (reply replies)
+      (let ((reply-time (string-to-number (taut-message-ts reply))))
+        (when (> reply-time max-time)
+          (setq max-time reply-time))))
+    (>= max-time limit)))
+
 (defun taut-sidebar--render-sections ()
   "Render all sections to the current buffer."
   ;; Add a line or two of space at the top of the sidebar
@@ -254,11 +269,12 @@
           (push chan dms)))
        (t (push chan public-chans))))
 
-    ;; Split threads into normal and hidden
+    ;; Split threads into normal and hidden (filtering out threads older than 14 days)
     (dolist (th-ts taut-watched-threads)
-      (if (taut-sidebar--thread-is-hidden-p th-ts)
-          (push th-ts hidden-threads)
-        (push th-ts normal-threads)))
+      (when (taut-sidebar--thread-recent-p th-ts)
+        (if (taut-sidebar--thread-is-hidden-p th-ts)
+            (push th-ts hidden-threads)
+          (push th-ts normal-threads))))
 
     (setq starred (nreverse starred)
           public-chans (nreverse public-chans)

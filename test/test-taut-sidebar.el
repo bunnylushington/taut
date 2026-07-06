@@ -31,7 +31,8 @@
   (with-temp-buffer
     (let ((inhibit-read-only t)
           (taut-use-icons nil)) ; Use unicode/plain fallbacks for simple string matching
-      (taut-sidebar--render-sections)
+      (cl-letf (((symbol-function 'float-time) (lambda () 1688460000.0)))
+        (taut-sidebar--render-sections))
       
       (let ((content (buffer-string)))
         ;; Verify section headers are present
@@ -209,6 +210,26 @@
         (goto-char 5)
         (taut-sidebar-activate)
         (should (eq toggled-section 'starred))))))
+
+(ert-deftest taut-sidebar-thread-recentness-test ()
+  "Test filtering of threads based on 14-day recentness limit."
+  (taut-initialize-mock-data)
+  ;; Current simulated time: Jul 18, 2023 04:40:00 UTC (1689655200.0)
+  ;; 14 days ago is: 1689655200.0 - 1209600 = 1688445600.0
+  (let ((current-time 1689655200.0))
+    ;; 1. Root ts is 1688460000.0001 (Jul 4, 2023), which is > 1688445600.0 -> recent!
+    (should (taut-sidebar--thread-recent-p "1688460000.0001" current-time))
+    
+    ;; 2. Root ts is 1688400000.0000 (Jul 3, 2023), which is < 1688445600.0 -> older than 14 days
+    ;; Underneath, there are no replies, so it should NOT be recent
+    (setf (gethash "1688400000.0000" taut-threads) nil)
+    (should-not (taut-sidebar--thread-recent-p "1688400000.0000" current-time))
+    
+    ;; 3. Root ts is 1688400000.0000, but there's a reply at 1688450000.0001 (Jul 4, 2023) -> recent!
+    (setf (gethash "1688400000.0000" taut-threads)
+          (list (make-taut-message :id "r1" :channel-id "C_DEV" :user-id "U_ALICE"
+                                   :text "Recent reply" :ts "1688450000.0001")))
+    (should (taut-sidebar--thread-recent-p "1688400000.0000" current-time))))
 
 (provide 'test-taut-sidebar)
 ;;; test-taut-sidebar.el ends here
