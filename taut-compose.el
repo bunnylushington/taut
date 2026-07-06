@@ -45,7 +45,7 @@
     (define-key map (kbd "C-c C-l") #'taut-compose-insert-link)
     (define-key map (kbd "C-c C-u") #'taut-compose-insert-user-mention)
     (define-key map (kbd "C-c @") #'taut-compose-insert-user-mention)
-    (define-key map (kbd "?") #'taut-compose-dispatch)
+    (define-key map (kbd "C-c C-m") #'taut-compose-dispatch)
     map)
   "Keymap for `taut-compose-mode`.")
 
@@ -60,7 +60,7 @@
                              (prefix (if is-dm "@" "#"))
                              (is-thread taut-compose-thread-ts)
                              (is-edit taut-compose-edit-ts))
-                        (format " %s %s %s in %s%s  [C-c C-c to send, C-c C-k to abort, ? for helper]"
+                        (format " %s %s %s in %s%s  [C-c C-c to send, C-c C-k to abort, C-c C-m for helper]"
                                 (if is-edit "✏️" (if is-thread "🧵" "💬"))
                                 (if is-edit "Editing" "Composing")
                                 (if is-edit "message" (if is-thread "thread reply" "message"))
