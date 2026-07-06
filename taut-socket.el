@@ -47,8 +47,11 @@
 (defvar taut-socket-last-event-type nil
   "Type string of the last received event.")
 
+(declare-function alert "alert" (string &rest keys))
+
 (defcustom taut-enable-os-notifications nil
-  "When non-nil, attempt to send a native OS notification on new incoming messages using the `alert' library if available."
+  "Toggle native OS notifications for incoming messages using the `alert' library.
+Only active when `alert' is installed and available."
   :type 'boolean
   :group 'taut)
 
