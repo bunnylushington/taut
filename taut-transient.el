@@ -78,7 +78,7 @@
     ("U" "Direct Message (User)" taut-dm-open)
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
     ("I" "Show/Focus Slack Activity" taut-inbox-show)
-    ("R" "Reset Layout"        taut-reset-layout)
+    ("W" "Reset Layout"        taut-reset-layout)
     ("q" "Quit / Bury Pane"    quit-window :if (lambda () (not (eq major-mode 'taut-thread-mode))))
     ("Q" "Hard Quit Taut"      taut-quit)]
    
@@ -107,7 +107,7 @@
    ["Conversation Actions"
     :if (lambda () (memq major-mode '(taut-message-mode taut-thread-mode)))
     ("r"   "Reply / Send Message" taut-message-reply-normal)
-    ("W"   "Reply quoting Msg"    taut-message-reply-quote)
+    ("R"   "Reply quoting Msg"    taut-message-reply-quote)
     ("e"   "Edit Message"         taut-message-edit)
     ("d"   "Delete Message"       taut-message-delete)
     ("a"   "Add Emoji Reaction"   taut-message-add-reaction)
