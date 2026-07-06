@@ -52,7 +52,7 @@
   (taut-model-add-message (make-taut-message :id "m1_2" :channel-id "C_GENERAL" :user-id "U_ALICE" :text "Excited to be here! Check out the `development` channel." :ts "1688450100.0001" :is-unread nil))
 
   ;; #development
-  (taut-model-add-message (make-taut-message :id "m2_1" :channel-id "C_DEV" :user-id "U_ALICE" :text "Hey team, we're building the new Emacs client *Taut*! Focus is on extreme UX and notifications." :ts "1688460000.0001" :is-unread nil))
+  (taut-model-add-message (make-taut-message :id "m2_1" :channel-id "C_DEV" :user-id "U_ALICE" :text "Hey team, we're building the new Emacs client *Taut*! Focus is on extreme UX and notifications." :ts "1688460000.0001" :is-unread nil :is-starred t))
   (taut-model-add-message (make-taut-message :id "m2_2" :channel-id "C_DEV" :user-id "U_DAVE" :text "Amazing! Will it support thread indicators?" :ts "1688460500.0001" :is-unread nil :thread-ts "1688460000.0001"))
   (taut-model-add-message (make-taut-message :id "m2_3" :channel-id "C_DEV" :user-id "U_ALICE" :text "Yes, clicking the thread replies will open a dedicated side panel." :ts "1688460600.0001" :is-unread nil :thread-ts "1688460000.0001"))
 

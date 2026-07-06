@@ -531,14 +531,36 @@
           (let* ((user (taut-model-get-user (taut-message-user-id msg)))
                  (username (if user (or (taut-user-username user) "unknown") "unknown"))
                  (text (taut-message-text msg))
-                 ;; Clean up text: replace newlines with spaces and
-                 ;; limit snippet size.
+                 ;; Clean up text: replace newlines with spaces and limit snippet size
                  (snippet (replace-regexp-in-string "\n" " " (or text "")))
                  (snippet (if (> (length snippet) 30) (concat (substring snippet 0 27) "...") snippet))
+                 (chan-id (taut-message-channel-id msg))
+                 (chan (and chan-id (taut-model-get-channel chan-id)))
+                 (is-dm (and chan (eq (taut-channel-type chan) 'dm)))
+                 (ts-str (taut-message-ts msg))
+                 (date-str
+                  (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
+                      (let* ((epoch (string-to-number (match-string 1 ts-str)))
+                             (time-val (seconds-to-time epoch)))
+                        (downcase (format-time-string "%d-%b-%y" time-val)))
+                    "unknown date"))
                  (line-start (point)))
+            ;; Line 1: Star icon, username, snippet
             (insert "  " (taut-sidebar--get-icon 'star))
             (insert (propertize (format "@%s: " username) 'face 'font-lock-comment-face))
             (insert (propertize snippet 'face 'taut-sidebar-channel))
+            (insert "\n")
+            ;; Line 2: Channel (if not DM)
+            (when (and chan (not is-dm))
+              (let ((chan-prefix (taut-sidebar--get-icon (taut-channel-type chan)))
+                    (chan-display-name (car (taut-sidebar--resolve-display-names (taut-channel-name chan)))))
+                (insert (propertize (format "     in %s%s" chan-prefix chan-display-name)
+                                    'face 'font-lock-comment-face))
+                (insert "\n")))
+            ;; Line 3 (or 2 if DM): Date
+            (insert (propertize (format "     on %s" date-str) 'face 'font-lock-comment-face))
+            
+            ;; Add properties for clicking/activating
             (add-text-properties line-start (point)
                                  (list 'taut-bookmark-msg msg
                                        'mouse-face 'highlight))

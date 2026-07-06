@@ -67,7 +67,16 @@
           (should pos)
           (backward-char 3)
           (should (equal (get-text-property (point) 'taut-thread-ts) "1688460000.0001"))
-          (should (equal (get-text-property (point) 'taut-channel-id) "C_DEV")))))))
+          (should (equal (get-text-property (point) 'taut-channel-id) "C_DEV")))
+
+        ;; Check text properties for a bookmark
+        (goto-char (point-min))
+        (let ((pos (search-forward "on 04-jul-23" nil t)))
+          (should pos)
+          (backward-char 3)
+          (let ((msg (get-text-property (point) 'taut-bookmark-msg)))
+            (should msg)
+            (should (equal (taut-message-id msg) "m2_1"))))))))
 
 (ert-deftest taut-sidebar-toggle-section-test ()
   "Test that collapsing sections prevents rendering their items."
