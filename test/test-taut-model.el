@@ -152,5 +152,70 @@
     (taut-model--check-huddle-message "C_DEV" "📞 Slack Huddle Ended: Design Discussion Ended")
     (should-not (taut-channel-has-active-huddle chan))))
 
+(ert-deftest taut-window-consolidation-method-test ()
+  "Test that `taut-consolidate-method` resolves correctly."
+  (let ((taut-consolidate-windows nil))
+    (should-not (taut-consolidate-method)))
+  (let ((taut-consolidate-windows 'tab))
+    (should (eq (taut-consolidate-method) 'tab)))
+  (let ((taut-consolidate-windows 'frame))
+    (should (eq (taut-consolidate-method) 'frame)))
+  (let ((taut-consolidate-windows 'auto))
+    (let ((tab-bar-mode nil))
+      (should (eq (taut-consolidate-method) 'frame)))
+    (let ((tab-bar-mode t))
+      (should (eq (taut-consolidate-method) 'tab)))))
+
+(ert-deftest taut-ensure-consolidated-workspace-test ()
+  "Test that `taut-ensure-consolidated-workspace` executes safely in tests."
+  (let ((taut-consolidate-windows 'tab))
+    ;; Should not raise any errors in noninteractive test mode
+    (should (progn
+              (taut-ensure-consolidated-workspace)
+              t)))
+  (let ((taut-consolidate-windows 'frame))
+    ;; Should not raise any errors in noninteractive test mode
+    (should (progn
+              (taut-ensure-consolidated-workspace)
+              t))))
+
+(ert-deftest taut-reset-layout-test ()
+  "Test that `taut-reset-layout` executes safely and works as expected."
+  (let ((taut-consolidate-windows 'tab))
+    ;; Verify calling taut-reset-layout completes without error
+    (should (progn
+              (taut-reset-layout)
+              t)))
+  (let ((taut-consolidate-windows nil))
+    ;; Verify calling taut-reset-layout completes without error
+    (should (progn
+              (taut-reset-layout)
+              t))))
+
+(ert-deftest taut-quit-extended-test ()
+  "Test that `taut-quit` runs cleanly, kills all Taut buffers, and cleans up."
+  (let ((buf1 (get-buffer-create "*Taut - #general-test*"))
+        (buf2 (get-buffer-create "*Taut Sidebar*"))
+        (buf3 (get-buffer-create "*Slack Activity*")))
+    (with-current-buffer buf1
+      (taut-message-mode))
+    (with-current-buffer buf2
+      (taut-sidebar-mode))
+    (with-current-buffer buf3
+      (taut-inbox-mode))
+    
+    ;; Verify the buffers exist
+    (should (get-buffer "*Taut - #general-test*"))
+    (should (get-buffer "*Taut Sidebar*"))
+    (should (get-buffer "*Slack Activity*"))
+    
+    ;; Call taut-quit
+    (taut-quit)
+    
+    ;; Verify buffers are killed
+    (should-not (get-buffer "*Taut - #general-test*"))
+    (should-not (get-buffer "*Taut Sidebar*"))
+    (should-not (get-buffer "*Slack Activity*"))))
+
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here

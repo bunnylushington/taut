@@ -18,6 +18,7 @@
 ;; Forward declarations for byte-compiler peace of mind
 (declare-function taut-connect "taut")
 (declare-function taut-quit "taut")
+(declare-function taut-reset-layout "taut")
 (declare-function taut-dm-open "taut")
 (declare-function taut-sidebar-show "taut-sidebar")
 (declare-function taut-sidebar-bury "taut-sidebar")
@@ -77,6 +78,7 @@
     ("U" "Direct Message (User)" taut-dm-open)
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
     ("I" "Show/Focus Slack Activity" taut-inbox-show)
+    ("L" "Reset Layout"        taut-reset-layout)
     ("q" "Quit / Bury Pane"    quit-window :if (lambda () (not (eq major-mode 'taut-thread-mode))))
     ("Q" "Hard Quit Taut"      taut-quit)]
    

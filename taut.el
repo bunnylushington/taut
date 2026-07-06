@@ -168,26 +168,71 @@ Stop simulators, close WebSocket, kill buffers, and restore windows."
     (taut-socket-disconnect))
   
   ;; 3. Identify and collect all Taut buffers
-  (let ((taut-modes '(taut-sidebar-mode taut-inbox-mode taut-message-mode taut-thread-mode))
+  (let ((taut-modes '(taut-sidebar-mode taut-inbox-mode taut-message-mode taut-thread-mode taut-compose-mode taut-socket-status-mode))
         (buffers-to-kill nil))
     (dolist (buf (buffer-list))
       (with-current-buffer buf
         (when (memq major-mode taut-modes)
           (push buf buffers-to-kill))))
     
-    ;; 4. Close windows showing Taut buffers, or switch to *scratch* if single window
-    (dolist (win (window-list))
-      (let ((buf (window-buffer win)))
-        (when (memq (buffer-local-value 'major-mode buf) taut-modes)
-          (if (one-window-p)
-              (set-window-buffer win (get-buffer-create "*scratch*"))
-            (ignore-errors (delete-window win))))))
+    ;; 4. Tab and Frame Cleanup
+    (unless noninteractive
+      ;; Delete all "Taut" frames
+      (let ((taut-frames (cl-filter (lambda (f) (equal (frame-parameter f 'name) "Taut")) (frame-list))))
+        (dolist (f taut-frames)
+          (if (> (length (frame-list)) 1)
+              (ignore-errors (delete-frame f))
+            ;; If it is the last frame, rename it back to default or "Emacs" and display scratch
+            (set-frame-name "Emacs")
+            (dolist (win (window-list f))
+              (set-window-buffer win (get-buffer-create "*scratch*"))))))
+      
+      ;; Delete all "Taut" tabs in all remaining frames
+      (dolist (frame (frame-list))
+        (with-selected-frame frame
+          (while (taut--tab-exists-p "Taut")
+            (ignore-errors
+              (taut--close-tab-by-name "Taut"))))))
     
-    ;; 5. Kill all identified Taut buffers
+    ;; 5. Delete remaining Taut windows on other frames/tabs
+    (dolist (frame (frame-list))
+      (dolist (win (window-list frame))
+        (let ((buf (window-buffer win)))
+          (when (memq (buffer-local-value 'major-mode buf) taut-modes)
+            (if (one-window-p nil frame)
+                (set-window-buffer win (get-buffer-create "*scratch*"))
+              (ignore-errors (delete-window win)))))))
+    
+    ;; 6. Kill all identified Taut buffers
     (dolist (buf buffers-to-kill)
       (kill-buffer buf))
     
     (message "Taut: Hard quit complete.")))
+
+;;;###autoload
+(defun taut-reset-layout ()
+  "Reset the Taut window layout.
+Resets the sidebar window to `taut-sidebar-width`. If consolidation
+is enabled, also rebalances the remaining windows in the active tab/frame."
+  (interactive)
+  (let* ((sidebar-buf (get-buffer "*Taut Sidebar*"))
+         (sidebar-win (and sidebar-buf (get-buffer-window sidebar-buf))))
+    (if (taut-consolidate-method)
+        ;; If consolidation is active, balance all windows first,
+        ;; then restore the sidebar to its configured width.
+        (progn
+          (balance-windows)
+          (when sidebar-win
+            (let ((delta (- taut-sidebar-width (window-total-width sidebar-win))))
+              (when (/= delta 0)
+                (ignore-errors
+                  (window-resize sidebar-win delta t))))))
+      ;; If not consolidating, just restore the sidebar width
+      (when sidebar-win
+        (let ((delta (- taut-sidebar-width (window-total-width sidebar-win))))
+          (when (/= delta 0)
+            (ignore-errors
+              (window-resize sidebar-win delta t))))))))
 
 (defvar taut-mock-timer nil
   "Timer object running the background simulator (obsolete stub).")

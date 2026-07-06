@@ -627,6 +627,7 @@ found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-t
 (defun taut-sidebar-show ()
   "Launch or display the Taut Sidebar."
   (interactive)
+  (taut-ensure-consolidated-workspace)
   (let ((buf (get-buffer-create "*Taut Sidebar*")))
     (with-current-buffer buf
       (unless (eq major-mode 'taut-sidebar-mode)

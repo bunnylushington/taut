@@ -143,6 +143,7 @@ replies from API first."
   "Open the thread discussion buffer for THREAD-TS in a split window on the right.
 If CHANNEL-ID is provided, use it directly. Otherwise, attempt to resolve it
 using local cache fallback strategies."
+  (taut-ensure-consolidated-workspace)
   (let* ((buf-name "*Taut Thread*")
          (buf (get-buffer-create buf-name)))
     (with-current-buffer buf

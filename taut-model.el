@@ -22,6 +22,86 @@
   "An elegant Slack client for Emacs."
   :group 'applications)
 
+(defcustom taut-consolidate-windows nil
+  "Whether and how to consolidate Taut windows into a single tab or frame.
+Accepted values are:
+  - nil:     Do not consolidate.
+  - `frame': Group all Taut windows in a single frame named \"Taut\".
+  - `tab':   Group all Taut windows in a single tab named \"Taut\".
+  - `auto':  Use a tab named \"Taut\" if the `tab-bar' is active
+            (i.e., `tab-bar-mode' is enabled), and a frame named
+            \"Taut\" otherwise."
+  :type '(choice (const :tag "Do not consolidate" nil)
+                 (const :tag "Single frame" frame)
+                 (const :tag "Single tab" tab)
+                 (const :tag "Auto (tab if tab-bar is active, else frame)" auto))
+  :group 'taut)
+
+(defun taut-consolidate-method ()
+  "Determine the active consolidation method (`tab', `frame', or nil)."
+  (cond
+   ((eq taut-consolidate-windows 'tab) 'tab)
+   ((eq taut-consolidate-windows 'frame) 'frame)
+   ((eq taut-consolidate-windows 'auto)
+    (if (and (boundp 'tab-bar-mode) tab-bar-mode)
+        'tab
+      'frame))
+   (t nil)))
+
+(defun taut--tab-exists-p (name)
+  "Return t if a tab named NAME exists in the current frame."
+  (and (fboundp 'tab-bar-tabs)
+       (cl-some (lambda (tab)
+                  (equal (cdr (assq 'name (cdr tab))) name))
+                (tab-bar-tabs))))
+
+(defun taut-ensure-tab ()
+  "Ensure a tab named \"Taut\" exists and is selected in the current frame."
+  (unless noninteractive
+    (require 'tab-bar)
+    (unless tab-bar-mode
+      (tab-bar-mode 1))
+    (if (taut--tab-exists-p "Taut")
+        (tab-bar-select-tab-by-name "Taut")
+      (tab-bar-new-tab)
+      (tab-bar-rename-tab "Taut"))))
+
+(defun taut-ensure-frame ()
+  "Ensure a frame named \"Taut\" exists and is focused."
+  (if noninteractive
+      (selected-frame)
+    (let ((frame (cl-find-if (lambda (f) (equal (frame-parameter f 'name) "Taut"))
+                            (frame-list))))
+      (if frame
+          (select-frame-set-input-focus frame)
+        (let ((new-frame (make-frame '((name . "Taut")))))
+          (select-frame-set-input-focus new-frame)
+          new-frame)))))
+
+(defun taut-ensure-consolidated-workspace ()
+  "Ensure the workspace is consolidated according to `taut-consolidate-windows`."
+  (let ((method (taut-consolidate-method)))
+    (cond
+     ((eq method 'tab)
+      (taut-ensure-tab))
+     ((eq method 'frame)
+      (taut-ensure-frame)))))
+
+(defun taut--close-tab-by-name (name)
+  "Close the tab named NAME in the current frame safely."
+  (when (and (require 'tab-bar nil t)
+             (fboundp 'tab-bar-tabs))
+    (let ((index 1)
+          found)
+      (dolist (tab (tab-bar-tabs))
+        (if (equal (cdr (assq 'name (cdr tab))) name)
+            (setq found index)
+          (setq index (1+ index))))
+      (when found
+        (if (fboundp 'tab-bar-close-tab)
+            (tab-bar-close-tab found)
+          (tab-bar-close-tab-by-name name))))))
+
 (defgroup taut-faces nil
   "Faces used by the Taut Slack client."
   :group 'taut)

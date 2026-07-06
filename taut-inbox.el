@@ -511,6 +511,7 @@ Returns non-nil if the buffer was found and focused."
 (defun taut-inbox-show ()
   "Display the Slack Activity in the active central window."
   (interactive)
+  (taut-ensure-consolidated-workspace)
   (let ((buf (get-buffer-create "*Slack Activity*"))
         (sidebar-win (get-buffer-window "*Taut Sidebar*")))
     (with-current-buffer buf
