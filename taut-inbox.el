@@ -349,6 +349,28 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
   "Clean and truncate TEXT for display as an inbox snippet."
   (if text
       (let* ((clean (replace-regexp-in-string "[\n\r\t ]+" " " text))
+             ;; Translate user mentions (e.g. <@U12345> or <@U12345|alice>)
+             (clean (replace-regexp-in-string
+                     "<@\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>"
+                     (lambda (m)
+                       (let* ((uid (match-string 1 m))
+                              (label (match-string 3 m))
+                              (user (gethash uid taut-users))
+                              (username (or label (if user (taut-user-username user) uid) uid)))
+                         (format "@%s" username)))
+                     clean
+                     t))
+             ;; Translate channel mentions (e.g. <#C12345> or <#C12345|general>)
+             (clean (replace-regexp-in-string
+                     "<#\\([^>|]+\\)\\(|\\([^>]+\\)\\)?>"
+                     (lambda (m)
+                       (let* ((cid (match-string 1 m))
+                              (label (match-string 3 m))
+                              (chan (taut-model-get-channel cid))
+                              (name (or label (if chan (taut-channel-name chan) cid) cid)))
+                         (format "#%s" name)))
+                     clean
+                     t))
              (trimmed (replace-regexp-in-string "^\\s-+\\|\\s-+$" "" clean)))
         (if (> (length trimmed) 80)
             (concat (substring trimmed 0 80) "...")

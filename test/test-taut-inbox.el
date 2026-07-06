@@ -52,11 +52,28 @@
     (should (equal (taut-inbox--format-date-group nil) "Older Activity"))))
 
 (ert-deftest taut-inbox-clean-snippet-test ()
-  "Test snippet cleaning and truncation."
+  "Test snippet cleaning, truncation, and mention translations."
+  (taut-model-clear-all)
   (should (equal (taut-inbox--clean-snippet nil) ""))
   (should (equal (taut-inbox--clean-snippet "  hello \n world \t ") "hello world"))
   (let ((long-str (make-string 100 ?a)))
-    (should (equal (taut-inbox--clean-snippet long-str) (concat (make-string 80 ?a) "...")))))
+    (should (equal (taut-inbox--clean-snippet long-str) (concat (make-string 80 ?a) "..."))))
+  
+  ;; Setup mock database state
+  (let ((u-alice (make-taut-user :id "U_ALICE" :username "alice" :real-name "Alice Smith"))
+        (c-general (make-taut-channel :id "C_GENERAL" :name "general" :type 'public)))
+    (taut-model-add-user u-alice)
+    (taut-model-add-channel c-general)
+    
+    ;; 1. User mentions with and without labels
+    (should (equal (taut-inbox--clean-snippet "Please ask <@U_ALICE>") "Please ask @alice"))
+    (should (equal (taut-inbox--clean-snippet "Ping <@U_ALICE|alice-smith>") "Ping @alice-smith"))
+    (should (equal (taut-inbox--clean-snippet "Ask <@U_NONEXISTENT>") "Ask @U_NONEXISTENT"))
+    
+    ;; 2. Channel mentions with and without labels
+    (should (equal (taut-inbox--clean-snippet "Go to <#C_GENERAL>") "Go to #general"))
+    (should (equal (taut-inbox--clean-snippet "Join <#C_GENERAL|general-announcements>") "Join #general-announcements"))
+    (should (equal (taut-inbox--clean-snippet "Go to <#C_NONEXISTENT>") "Go to #C_NONEXISTENT"))))
 
 (ert-deftest taut-inbox-render-test ()
   "Test rendering the inbox buffer with correct items and layouts."
