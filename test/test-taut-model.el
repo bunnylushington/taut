@@ -137,5 +137,20 @@
     (should (equal (taut-inbox-item-message-id (car inbox-items)) "dm1"))
     (should (eq (taut-inbox-item-type (car inbox-items)) 'dm))))
 
+(ert-deftest taut-model-huddle-message-test ()
+  "Test that taut-model--check-huddle-message toggles the has-active-huddle slot on channel."
+  (taut-model-clear-all)
+  (let ((chan (make-taut-channel :id "C_DEV" :name "development" :type 'public)))
+    (taut-model-add-channel chan)
+    (should-not (taut-channel-has-active-huddle chan))
+    
+    ;; Send an "in progress" huddle message
+    (taut-model--check-huddle-message "C_DEV" "📞 Slack Huddle: Design Discussion in progress")
+    (should (taut-channel-has-active-huddle chan))
+    
+    ;; Send an "Ended" huddle message
+    (taut-model--check-huddle-message "C_DEV" "📞 Slack Huddle Ended: Design Discussion Ended")
+    (should-not (taut-channel-has-active-huddle chan))))
+
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here

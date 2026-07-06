@@ -134,5 +134,43 @@
         ;; Test fallback if old-ts is not found
         (should (= (taut-message--resolve-point-pos 5 "ts-999" nil nil nil) 5))))))
 
+(ert-deftest taut-message-huddle-rendering-test ()
+  "Test that Slack Huddle messages are correctly identified and formatted as beautiful boxes."
+  (should (taut-message--huddle-message-p "📞 Slack Huddle: General in progress"))
+  (should (taut-message--huddle-message-p "📞 Slack Huddle (Ended)"))
+  (should-not (taut-message--huddle-message-p "Hello team"))
+  
+  (with-temp-buffer
+    (taut-message--insert-huddle-box "📞 Slack Huddle: Design Session in progress" "         ")
+    (let ((buf-str (buffer-string)))
+      (should (string-match-p "╭───" buf-str))
+      (should (string-match-p "╰───" buf-str))
+      (should (string-match-p "🎧" buf-str))
+      (should (string-match-p "Slack Huddle (Active)" buf-str))
+      (should (string-match-p "Design Session" buf-str)))))
+
+(ert-deftest taut-huddle-join-test ()
+  "Test taut-huddle-join deep link URI generation and browse-url invocation."
+  (let ((taut-team-id "T_MOCK_123")
+        (opened-url nil))
+    (cl-letf (((symbol-function 'browse-url)
+               (lambda (url) (setq opened-url url))))
+      ;; 1. Join with team id configured
+      (let ((curr-buf (get-buffer-create "*taut-mock-msg*")))
+        (with-current-buffer curr-buf
+          (setq-local taut-current-channel-id "C_HUDDLE_CHAN")
+          (taut-huddle-join))
+        (should (equal opened-url "slack://channel?team=T_MOCK_123&id=C_HUDDLE_CHAN"))
+        (kill-buffer curr-buf))
+      
+      ;; 2. Join without team id
+      (let ((taut-team-id nil)
+            (curr-buf (get-buffer-create "*taut-mock-msg*")))
+        (with-current-buffer curr-buf
+          (setq-local taut-current-channel-id "C_HUDDLE_CHAN")
+          (taut-huddle-join))
+        (should (equal opened-url "slack://channel?id=C_HUDDLE_CHAN"))
+        (kill-buffer curr-buf)))))
+
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here

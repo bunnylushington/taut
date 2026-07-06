@@ -35,7 +35,8 @@
   real-name
   presence     ; 'online, 'away, 'offline
   is-me        ; t or nil
-  custom-status)
+  custom-status
+  is-huddling)
 
 (cl-defstruct taut-channel
   "Represents a Slack channel, group, or DM."
@@ -47,7 +48,8 @@
   is-starred
   is-hidden    ; t if the channel is marked as hidden
   topic
-  purpose)
+  purpose
+  has-active-huddle)
 
 (cl-defstruct taut-message
   "Represents a single Slack message."
@@ -81,6 +83,9 @@
 
 (defvar taut-current-user-id "U_ME"
   "The Slack user ID of the current logged-in user.")
+
+(defvar taut-team-id nil
+  "The Slack Team ID of the current workspace.")
 
 (defvar taut-users (make-hash-table :test 'equal)
   "Hash table mapping user-id (string) to `taut-user` struct.")
@@ -118,6 +123,19 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
                  (setq found user)))
              taut-users)
     found))
+
+(defun taut-model-normalize-presence (presence-val)
+  "Normalize PRESENCE-VAL (string, symbol, or other) to 'online, 'away, or 'offline."
+  (cond
+   ((null presence-val) 'offline)
+   ((or (equal presence-val "active")
+        (eq presence-val 'active)
+        (eq presence-val 'online))
+    'online)
+   ((or (equal presence-val "away")
+        (eq presence-val 'away))
+    'away)
+   (t 'offline)))
 
 (defun taut-model-get-channel (channel-id)
   "Retrieve the `taut-channel` for CHANNEL-ID."
@@ -406,11 +424,25 @@ Preserves existing is-hidden state if already present."
       (taut-model-trigger-update))
     found))
 
+(defun taut-model--check-huddle-message (chan-id text)
+  "Update huddle status for CHAN-ID based on message TEXT."
+  (when (and chan-id text)
+    (let ((chan (taut-model-get-channel chan-id)))
+      (when chan
+        (cond
+         ((and (string-match-p "📞 Slack Huddle" text)
+               (string-match-p "in progress" text))
+          (unless (taut-channel-has-active-huddle chan)
+            (setf (taut-channel-has-active-huddle chan) t)
+            (taut-model-trigger-update)))
+         ((and (string-match-p "📞 Slack Huddle" text)
+               (string-match-p "Ended" text))
+          (when (taut-channel-has-active-huddle chan)
+            (setf (taut-channel-has-active-huddle chan) nil)
+            (taut-model-trigger-update))))))))
+
 (defun taut-model-add-message (msg &optional no-inc-reply-p no-inc-unread-p)
-  "Insert message MSG into storage, managing unreads and notifications.
-Avoid inserting duplicate messages based on timestamp TS.
-If NO-INC-REPLY-P is non-nil, do not increment root reply count.
-If NO-INC-UNREAD-P is non-nil, do not increment channel unread count."
+  "Insert message MSG into storage, managing unreads and notifications."
   (let* ((chan-id (taut-message-channel-id msg))
          (chan (taut-model-get-channel chan-id))
          (thread-ts (taut-message-thread-ts msg))
@@ -448,7 +480,8 @@ If NO-INC-UNREAD-P is non-nil, do not increment channel unread count."
       (when (fboundp 'taut-cache-save-message)
         (taut-cache-save-message msg))
       (when (and thread-ts (not (equal thread-ts msg-ts)) (fboundp 'taut-cache-save-watched-thread))
-        (taut-cache-save-watched-thread thread-ts)))
+        (taut-cache-save-watched-thread thread-ts))
+      (taut-model--check-huddle-message chan-id (taut-message-text msg)))
 
     ;; Update channel unread/mention statistics (only if not a duplicate)
     (unless is-duplicate

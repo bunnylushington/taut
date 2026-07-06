@@ -67,6 +67,11 @@
   "Face for offline indicator."
   :group 'taut-faces)
 
+(defface taut-sidebar-huddle
+  '((t :foreground "#1d9bd1" :weight bold))
+  "Face for huddle indicators."
+  :group 'taut-faces)
+
 ;;;; Configuration & State
 
 (defcustom taut-sidebar-width 30
@@ -100,6 +105,7 @@
     (define-key map (kbd "h") #'taut-sidebar-toggle-channel-hidden)
     (define-key map (kbd "q") #'taut-sidebar-bury)
     (define-key map (kbd "i") #'taut-inbox-show)
+    (define-key map (kbd "H") #'taut-huddle-join)
     (define-key map (kbd "?") #'taut-dispatch)
     map)
   "Keymap for `taut-sidebar-mode`.")
@@ -326,6 +332,10 @@
         (insert "  " name-prefix)
         (insert (propertize (car resolved-names) 'face channel-face))))
     
+    ;; Append Huddle icon if active huddle is ongoing
+    (when (taut-channel-has-active-huddle chan)
+      (insert (propertize " 🎧" 'face 'taut-sidebar-huddle)))
+    
     ;; Append Badge if there are unreads/mentions
     (cond
      (has-mentions
@@ -414,11 +424,15 @@
 
 (defun taut-sidebar--user-status-indicator (user)
   "Return a stylized string indicating USER's status."
-  (let ((presence (and user (taut-user-presence user))))
-    (cond
-     ((eq presence 'online)  (propertize "● " 'face 'taut-sidebar-status-online))
-     ((eq presence 'away)    (propertize "○ " 'face 'taut-sidebar-status-away))
-     (t                      (propertize "○ " 'face 'taut-sidebar-status-offline)))))
+  (cond
+   ((and user (taut-user-is-huddling user))
+    (propertize "🎧 " 'face 'taut-sidebar-huddle))
+   (t
+    (let ((presence (and user (taut-user-presence user))))
+      (cond
+       ((eq presence 'online)  (propertize "● " 'face 'taut-sidebar-status-online))
+       ((eq presence 'away)    (propertize "○ " 'face 'taut-sidebar-status-away))
+       (t                      (propertize "○ " 'face 'taut-sidebar-status-offline)))))))
 
 ;;;; Interaction Handlers
 

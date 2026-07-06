@@ -114,8 +114,11 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
 (defun taut-api-test-auth ()
   "Test bot credentials. Returns active user-id."
   (let* ((res (taut-api--request "auth.test" nil "POST"))
-         (bot-id (cdr (assoc 'user_id res))))
+         (bot-id (cdr (assoc 'user_id res)))
+         (team-id (cdr (assoc 'team_id res))))
     (setq taut-current-user-id bot-id)
+    (when team-id
+      (setq taut-team-id team-id))
     bot-id))
 
 (defun taut-api-fetch-users ()
@@ -161,7 +164,7 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             (when presence-str
               (let ((user (taut-model-get-user uid)))
                 (when user
-                  (setf (taut-user-presence user) (intern presence-str))
+                  (setf (taut-user-presence user) (taut-model-normalize-presence presence-str))
                   (when (fboundp 'taut-cache-save-user)
                     (taut-cache-save-user user))))))))
       (message "Taut: Finished syncing active presences."))))

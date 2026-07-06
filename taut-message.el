@@ -100,6 +100,13 @@
   "Face for clickable general links/URLs."
   :group 'taut-faces)
 
+(defface taut-message-huddle-box
+  '((((background dark))  :background "#1a365d" :foreground "#90cdf4" :box (:line-width 1 :color "#2b6cb0" :style flat-button))
+    (((background light)) :background "#ebf8ff" :foreground "#2b6cb0" :box (:line-width 1 :color "#90cdf4" :style flat-button))
+    (t                    :background "#ebf8ff" :foreground "#2b6cb0" :box (:line-width 1 :color "#90cdf4" :style flat-button)))
+  "Face for beautiful Slack Huddle inline summary boxes."
+  :group 'taut-faces)
+
 ;;;; Buffer-Local Variables
 
 (defvar-local taut-current-channel-id nil
@@ -280,6 +287,7 @@
 (define-key taut-message-mode-map (kbd "u") #'taut-message-upload-file)
 (define-key taut-message-mode-map (kbd "d") #'taut-message-delete)
 (define-key taut-message-mode-map (kbd "M") #'taut-message-mark-all-read)
+(define-key taut-message-mode-map (kbd "H") #'taut-huddle-join)
 (define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
@@ -465,6 +473,59 @@ history from API first."
       (dolist (msg msgs)
         (taut-message--render-message-line msg)))))
 
+(defun taut-message--huddle-message-p (text)
+  "Return non-nil if TEXT represents a Slack Huddle message."
+  (and text (string-match-p "📞 Slack Huddle" text)))
+
+(defun taut-message--insert-huddle-box (text prefix)
+  "Insert a beautifully styled inline huddle box for TEXT with PREFIX indentation."
+  (let* ((has-ended (string-match-p "Ended" text))
+         (in-progress (string-match-p "in progress" text))
+         (title (cond
+                 (has-ended "Slack Huddle (Ended)")
+                 (in-progress "Slack Huddle (Active)")
+                 (t "Slack Huddle")))
+         (details (let ((clean (replace-regexp-in-string "📞 Slack Huddle" "" text)))
+                    (setq clean (replace-regexp-in-string " ?\\(Ended\\)" "" clean))
+                    (setq clean (replace-regexp-in-string " ?in progress" "" clean))
+                    (setq clean (string-trim clean))
+                    (if (string-prefix-p ":" clean)
+                        (string-trim (substring clean 1))
+                      clean)))
+         (icon (if in-progress "🎧" "📞"))
+         (box-face 'taut-message-huddle-box)
+         (width 60)
+         (content-width (- width 4)))
+    ;; Print top border
+    (insert (propertize "╭" 'face box-face)
+            (propertize (make-string (- width 2) ?─) 'face box-face)
+            (propertize "╮\n" 'face box-face))
+    ;; Title line
+    (let* ((title-text (format "%s  %s" icon title))
+           (padding (- content-width (length title-text))))
+      (insert prefix
+              (propertize "│ " 'face box-face)
+              (propertize title-text 'face 'bold)
+              (propertize (make-string (max 0 padding) ? ) 'face 'default)
+              (propertize " │\n" 'face box-face)))
+    ;; Details line
+    (unless (string-blank-p details)
+      (let* ((details-text (format "    %s" details))
+             (truncated-details (if (> (length details-text) content-width)
+                                    (concat (substring details-text 0 (- content-width 3)) "...")
+                                  details-text))
+             (padding (- content-width (length truncated-details))))
+        (insert prefix
+                (propertize "│ " 'face box-face)
+                (propertize truncated-details 'face 'font-lock-comment-face)
+                (propertize (make-string (max 0 padding) ? ) 'face 'default)
+                (propertize " │\n" 'face box-face))))
+    ;; Print bottom border
+    (insert prefix
+            (propertize "╰" 'face box-face)
+            (propertize (make-string (- width 2) ?─) 'face box-face)
+            (propertize "╯" 'face box-face))))
+
 (defun taut-message--render-message-line (msg)
   "Render a single message line MSG."
   (let* ((msg-start (point))
@@ -486,7 +547,9 @@ history from API first."
     
     ;; Body line: (formatted text body with left indentation)
     (insert "         ")
-    (taut-message--insert-formatted-text (taut-message-text msg) "         ")
+    (if (taut-message--huddle-message-p (taut-message-text msg))
+        (taut-message--insert-huddle-box (taut-message-text msg) "         ")
+      (taut-message--insert-formatted-text (taut-message-text msg) "         "))
     (insert "\n")
 
     ;; Reactions display (if any)

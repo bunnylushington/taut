@@ -180,7 +180,7 @@ Creates the necessary tables if they do not exist."
                         :id id
                         :username username
                         :real-name real-name
-                        :presence (intern presence-str)
+                        :presence (taut-model-normalize-presence presence-str)
                         :is-me (= is-me 1)
                         :custom-status custom-status)))
             (setf (gethash id taut-users) user)

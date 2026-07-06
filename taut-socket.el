@@ -189,7 +189,9 @@
               ((string= subtype "message_changed")
                (let* ((sub-msg (cdr (assoc 'message event)))
                       (ts (cdr (assoc 'ts sub-msg)))
-                      (text (taut-api-unescape-html (or (cdr (assoc 'text sub-msg)) ""))))
+                      (raw-text (or (cdr (assoc 'text sub-msg)) ""))
+                      (full-text (taut-api--get-message-text sub-msg raw-text))
+                      (text (taut-api-unescape-html full-text)))
                  (message "Taut Socket: Message edited on channel %s, ts: %s" chan-id ts)
                  (when ts
                    (let ((updated nil))
@@ -210,6 +212,7 @@
                                         (setq updated t)))))
                                 taut-threads))
                      (when updated
+                       (taut-model--check-huddle-message chan-id text)
                        (taut-model-trigger-update))))))
               
               ;; 2. Handle deleted messages
@@ -308,7 +311,38 @@
                       (setcdr existing (delete user-id (cdr existing)))
                       (unless (cdr existing) ; if no users left for this reaction, prune it
                         (setf (taut-message-reactions msg) (assoc-delete-all emoji reactions)))
-                      (taut-model-trigger-update))))))))))))))
+                      (taut-model-trigger-update))))))))
+
+         ;; Handle user huddle change
+         ((string= event-type "user_huddle_changed")
+          (let* ((user-data (cdr (assoc 'user event)))
+                 (uid (cdr (assoc 'id user-data)))
+                 (huddle-state (cdr (assoc 'huddle_state user-data)))
+                 (in-huddle (and huddle-state (not (eq (cdr (assoc 'is_in_huddle huddle-state)) :json-false)))))
+            (message "Taut Socket: User huddle changed [user=%s] [in_huddle=%S]" uid in-huddle)
+            (when uid
+              (let ((user (gethash uid taut-users)))
+                (when user
+                  (setf (taut-user-is-huddling user) in-huddle)
+                  (taut-model-trigger-update))))))
+
+         ;; Handle presence change event
+         ((string= event-type "presence_change")
+          (let* ((presence-str (cdr (assoc 'presence event)))
+                 (presence-sym (taut-model-normalize-presence presence-str))
+                 (user-id (cdr (assoc 'user event)))
+                 (user-ids (cdr (assoc 'users event)))
+                 (uids (cond
+                        (user-ids (if (vectorp user-ids) (append user-ids nil) user-ids))
+                        (user-id (list user-id)))))
+            (message "Taut Socket: Presence changed to %s for users: %S" presence-str uids)
+            (dolist (uid uids)
+              (let ((user (gethash uid taut-users)))
+                (when user
+                  (setf (taut-user-presence user) presence-sym)
+                  (when (fboundp 'taut-cache-save-user)
+                    (taut-cache-save-user user)))))
+            (taut-model-trigger-update)))))))))
 
 ;;;; Diagnostic Status Mode & Dashboard
 

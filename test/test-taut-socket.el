@@ -219,5 +219,85 @@
              (reactions (taut-message-reactions msg)))
         (should-not reactions)))))
 
+(ert-deftest taut-socket-handle-user-huddle-changed-test ()
+  "Test handling 'user_huddle_changed' event toggling taut-user-is-huddling."
+  (taut-model-clear-all)
+  (let ((mock-ws "dummy-websocket")
+        (user (make-taut-user :id "U_HUDDLER" :username "huddler")))
+    (taut-model-add-user user)
+    (should-not (taut-user-is-huddling user))
+    
+    (cl-letf (((symbol-function 'websocket-send-text)
+               (lambda (_ws _text) nil)))
+      ;; 1. Fire user_huddle_changed with is_in_huddle = t
+      (taut-socket--handle-payload
+       mock-ws
+       '((envelope_id . "env-huddle-1")
+         (type . "events_api")
+         (payload . ((event . ((type . "user_huddle_changed")
+                               (user . ((id . "U_HUDDLER")
+                                        (huddle_state . ((is_in_huddle . t)))))))))))
+      
+      (should (taut-user-is-huddling user))
+      
+      ;; 2. Fire user_huddle_changed with is_in_huddle = :json-false
+      (taut-socket--handle-payload
+       mock-ws
+       '((envelope_id . "env-huddle-2")
+         (type . "events_api")
+         (payload . ((event . ((type . "user_huddle_changed")
+                               (user . ((id . "U_HUDDLER")
+                                        (huddle_state . ((is_in_huddle . :json-false)))))))))))
+      
+      (should-not (taut-user-is-huddling user)))))
+
+(ert-deftest taut-socket-handle-presence-change-test ()
+  "Test handling 'presence_change' events for single users and multiple users."
+  (taut-model-clear-all)
+  (let ((mock-ws "dummy-websocket")
+        (user1 (make-taut-user :id "U_ALICE" :username "alice" :presence 'offline))
+        (user2 (make-taut-user :id "U_BOB" :username "bob" :presence 'offline)))
+    (taut-model-add-user user1)
+    (taut-model-add-user user2)
+    (should (eq (taut-user-presence user1) 'offline))
+    (should (eq (taut-user-presence user2) 'offline))
+
+    (cl-letf (((symbol-function 'websocket-send-text)
+               (lambda (_ws _text) nil))
+              ((symbol-function 'taut-cache-save-user)
+               (lambda (_user) nil)))
+      
+      ;; 1. Single user "U_ALICE" goes active (online)
+      (taut-socket--handle-payload
+       mock-ws
+       '((envelope_id . "env-presence-1")
+         (type . "events_api")
+         (payload . ((event . ((type . "presence_change")
+                               (user . "U_ALICE")
+                               (presence . "active")))))))
+      (should (eq (taut-user-presence user1) 'online))
+      (should (eq (taut-user-presence user2) 'offline))
+
+      ;; 2. Single user "U_ALICE" goes away
+      (taut-socket--handle-payload
+       mock-ws
+       '((envelope_id . "env-presence-2")
+         (type . "events_api")
+         (payload . ((event . ((type . "presence_change")
+                               (user . "U_ALICE")
+                               (presence . "away")))))))
+      (should (eq (taut-user-presence user1) 'away))
+
+      ;; 3. Multiple users ["U_ALICE", "U_BOB"] both go active
+      (taut-socket--handle-payload
+       mock-ws
+       '((envelope_id . "env-presence-3")
+         (type . "events_api")
+         (payload . ((event . ((type . "presence_change")
+                               (users . ("U_ALICE" "U_BOB"))
+                               (presence . "active")))))))
+      (should (eq (taut-user-presence user1) 'online))
+      (should (eq (taut-user-presence user2) 'online)))))
+
 (provide 'test-taut-socket)
 ;;; test-taut-socket.el ends here

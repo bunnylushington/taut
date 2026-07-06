@@ -241,5 +241,20 @@ are immediately applied, even if older byte-compiled (.elc) files exist."
               (error
                (message "Error opening DM: %s" (error-message-string err))))))))))
 
+;;;###autoload
+(defun taut-huddle-join ()
+  "Join the Slack huddle for the channel under point or current buffer."
+  (interactive)
+  (let ((chan-id (or (get-text-property (point) 'taut-channel-id)
+                     (and (boundp 'taut-current-channel-id) taut-current-channel-id))))
+    (if (null chan-id)
+        (message "Taut: No channel found at point or in this buffer.")
+      (let* ((team-id (and (boundp 'taut-team-id) taut-team-id))
+             (url (if team-id
+                      (format "slack://channel?team=%s&id=%s" team-id chan-id)
+                    (format "slack://channel?id=%s" chan-id))))
+        (message "Taut: Launching Slack deep link for channel %s..." chan-id)
+        (browse-url url)))))
+
 (provide 'taut)
 ;;; taut.el ends here
