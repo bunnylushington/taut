@@ -17,6 +17,11 @@
 (declare-function taut-dispatch "taut-transient")
 (declare-function taut-inbox-show "taut-inbox")
 (declare-function taut-search-quick "taut-search")
+(declare-function taut-setup-strict-windows "taut")
+(declare-function taut-socket-status "taut-socket")
+
+(defvar taut-strict-windows)
+(defvar taut-socket-ws)
 
 ;;;; Faces
 
@@ -233,10 +238,34 @@ found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-t
           (setq max-time reply-time))))
     (>= max-time limit)))
 
+(defun taut-sidebar--render-connection-status ()
+  "Render a beautiful connection status indicator at the top of the sidebar."
+  (let* ((connected (and (bound-and-true-p taut-socket-ws)
+                         (websocket-openp taut-socket-ws)))
+         (status-face (if connected 'success 'font-lock-warning-face))
+         (status-text (if connected "Connected" "Disconnected"))
+         (dot (if connected "●" "○"))
+         (icon (or (and taut-use-icons (fboundp 'nerd-icons-octicon)
+                        (condition-case nil
+                            (nerd-icons-octicon (if connected "nf-oct-primitive_dot" "nf-oct-primitive_dot")
+                                                :face status-face)
+                          (error nil)))
+                   (and taut-use-icons (fboundp 'all-the-icons-octicon)
+                        (condition-case nil
+                            (all-the-icons-octicon "primitive-dot" :face status-face)
+                          (error nil)))
+                   (propertize dot 'face status-face))))
+    (insert "\n")
+    (let ((start (point)))
+      (insert "  " icon " " (propertize status-text 'face 'font-lock-comment-face))
+      (add-text-properties start (point)
+                           (list 'taut-sidebar-action #'taut-socket-status
+                                 'mouse-face 'highlight)))
+    (insert "\n\n")))
+
 (defun taut-sidebar--render-sections ()
   "Render all sections to the current buffer."
-  ;; Add a line or two of space at the top of the sidebar
-  (insert "\n\n")
+  (taut-sidebar--render-connection-status)
   ;; Render the Slack Activity shortcut with unread badge at the top
   (let* ((inbox-unread-count (taut-sidebar--get-inbox-unread-count))
          (has-unreads (> inbox-unread-count 0))
@@ -629,31 +658,40 @@ found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-t
 (defun taut-sidebar-show ()
   "Launch or display the Taut Sidebar."
   (interactive)
-  (taut-ensure-consolidated-workspace)
-  (let ((buf (get-buffer-create "*Taut Sidebar*")))
-    (with-current-buffer buf
-      (unless (eq major-mode 'taut-sidebar-mode)
-        (taut-sidebar-mode)))
-    
-    ;; Split frame to display sidebar on the left
-    (let ((window (get-buffer-window buf)))
-      (if window
-          ;; Ensure already open sidebar has the correct width
-          (let ((delta (- taut-sidebar-width (window-total-width window))))
-            (when (/= delta 0)
-              (ignore-errors
-                (window-resize window delta t))))
-        (let ((left-window (split-window (frame-root-window) taut-sidebar-width 'left)))
-          (set-window-buffer left-window buf)
-          (set-window-dedicated-p left-window t)
-          (let ((delta (- taut-sidebar-width (window-total-width left-window))))
-            (when (/= delta 0)
-              (ignore-errors
-                (window-resize left-window delta t))))
-          (setq window left-window)))
-      (taut-sidebar-refresh)
-      (select-window window)
-      window)))
+  (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+      (let ((sidebar-win (get-buffer-window "*Taut Sidebar*")))
+        (if sidebar-win
+            (select-window sidebar-win)
+          (taut-setup-strict-windows)
+          (setq sidebar-win (get-buffer-window "*Taut Sidebar*"))
+          (when sidebar-win
+            (select-window sidebar-win)))
+        sidebar-win)
+    (taut-ensure-consolidated-workspace)
+    (let ((buf (get-buffer-create "*Taut Sidebar*")))
+      (with-current-buffer buf
+        (unless (eq major-mode 'taut-sidebar-mode)
+          (taut-sidebar-mode)))
+      
+      ;; Split frame to display sidebar on the left
+      (let ((window (get-buffer-window buf)))
+        (if window
+            ;; Ensure already open sidebar has the correct width
+            (let ((delta (- taut-sidebar-width (window-total-width window))))
+              (when (/= delta 0)
+                (ignore-errors
+                  (window-resize window delta t))))
+          (let ((left-window (split-window (frame-root-window) taut-sidebar-width 'left)))
+            (set-window-buffer left-window buf)
+            (set-window-dedicated-p left-window t)
+            (let ((delta (- taut-sidebar-width (window-total-width left-window))))
+              (when (/= delta 0)
+                (ignore-errors
+                  (window-resize left-window delta t))))
+            (setq window left-window)))
+        (taut-sidebar-refresh)
+        (select-window window)
+        window))))
 
 (defun taut-sidebar-bury ()
   "Bury or hide the Taut Sidebar."
@@ -662,7 +700,9 @@ found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-t
     (when buf
       (let ((window (get-buffer-window buf)))
         (if window
-            (delete-window window)
+            (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+                (bury-buffer buf)
+              (delete-window window))
           (bury-buffer buf))))))
 
 ;; Hook sidebar auto-updates

@@ -231,5 +231,39 @@
                                    :text "Recent reply" :ts "1688450000.0001")))
     (should (taut-sidebar--thread-recent-p "1688400000.0000" current-time))))
 
+(ert-deftest taut-sidebar-connection-status-indicator-test ()
+  "Test rendering of connection status indicator in the sidebar."
+  (taut-initialize-mock-data)
+  (let ((taut-socket-ws nil))
+    ;; 1. Check Disconnected rendering
+    (with-temp-buffer
+      (let ((inhibit-read-only t)
+            (taut-use-icons nil))
+        (taut-sidebar--render-connection-status)
+        (let ((content (buffer-string)))
+          (should (string-match-p "○ Disconnected" content))
+          (should-not (string-match-p "● Connected" content))
+          ;; Check action text property
+          (goto-char (point-min))
+          (should (search-forward "Disconnected" nil t))
+          (backward-char 3)
+          (should (equal (get-text-property (point) 'taut-sidebar-action) #'taut-socket-status))))))
+
+  ;; 2. Check Connected rendering
+  (let ((taut-socket-ws t))
+    (cl-letf (((symbol-function 'websocket-openp) (lambda (_ws) t)))
+      (with-temp-buffer
+        (let ((inhibit-read-only t)
+              (taut-use-icons nil))
+          (taut-sidebar--render-connection-status)
+          (let ((content (buffer-string)))
+            (should (string-match-p "● Connected" content))
+            (should-not (string-match-p "○ Disconnected" content))
+            ;; Check action text property
+            (goto-char (point-min))
+            (should (search-forward "Connected" nil t))
+            (backward-char 3)
+            (should (equal (get-text-property (point) 'taut-sidebar-action) #'taut-socket-status))))))))
+
 (provide 'test-taut-sidebar)
 ;;; test-taut-sidebar.el ends here

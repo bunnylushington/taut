@@ -122,7 +122,9 @@ Only active when `alert' is installed and available."
     (cancel-timer taut-socket-retry-timer)
     (setq taut-socket-retry-timer nil))
   (setq taut-socket-retry-count 0)
-  (message "Taut Socket: Disconnected."))
+  (message "Taut Socket: Disconnected.")
+  (when (fboundp 'taut-sidebar-refresh)
+    (taut-sidebar-refresh)))
 
 (defun taut-socket-schedule-retry ()
   "Schedule a connection retry using exponential backoff with jitter."
@@ -147,7 +149,9 @@ Only active when `alert' is installed and available."
                     (message "Taut Socket: Connected to Slack Live Stream!")
                     (when taut-socket-retry-timer
                       (cancel-timer taut-socket-retry-timer)
-                      (setq taut-socket-retry-timer nil)))
+                      (setq taut-socket-retry-timer nil))
+                    (when (fboundp 'taut-sidebar-refresh)
+                      (taut-sidebar-refresh)))
          
          :on-message (lambda (ws frame)
                        (condition-case err
@@ -169,7 +173,9 @@ Only active when `alert' is installed and available."
                      (when (eq ws taut-socket-ws)
                        (message "Taut Socket: Closed by server. Reconnecting...")
                        (setq taut-socket-ws nil)
-                       (taut-socket-schedule-retry)))
+                       (taut-socket-schedule-retry)
+                       (when (fboundp 'taut-sidebar-refresh)
+                         (taut-sidebar-refresh))))
          
          :on-error (lambda (_ws type err)
                      (message "Taut Socket Error (%s): %s" type err)))))

@@ -46,6 +46,10 @@
 (declare-function taut-inbox-filter-dms "taut-inbox")
 (declare-function taut-inbox-filter-mentions "taut-inbox")
 (declare-function taut-inbox-filter-threads "taut-inbox")
+(declare-function taut-inbox-date-filter-today "taut-inbox")
+(declare-function taut-inbox-date-filter-last-7 "taut-inbox")
+(declare-function taut-inbox-date-filter-last-30 "taut-inbox")
+(declare-function taut-inbox-date-filter-all "taut-inbox")
 (declare-function taut-inbox-refresh "taut-inbox")
 
 (declare-function taut-message-delete "taut-message")
@@ -77,7 +81,7 @@
   "The main discoverable control center for the Taut Slack client."
   ["🌑 Taut"
    ["Workspace & Navigation"
-    ("C" "Connect to Slack"    taut-connect)
+    ("Z" "Connect to Slack"    taut-connect)
     ("U" "Direct Message (User)" taut-dm-open)
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
     ("I" "Show/Focus Slack Activity" taut-inbox-show)
@@ -108,6 +112,13 @@
     ("D"   "Show DMs Only"       taut-inbox-filter-dms)
     ("m"   "Show Mentions Only"  taut-inbox-filter-mentions)
     ("t"   "Show Threads Only"   taut-inbox-filter-threads)]
+
+   ["Slack Activity Date Filters"
+    :if (lambda () (eq major-mode 'taut-inbox-mode))
+    ("1"   "Filter Today"        taut-inbox-date-filter-today)
+    ("2"   "Filter Last 7 Days"  taut-inbox-date-filter-last-7)
+    ("3"   "Filter Last 30 Days" taut-inbox-date-filter-last-30)
+    ("4"   "Filter All Time"     taut-inbox-date-filter-all)]
    
    ["Conversation Actions"
     :if (lambda () (memq major-mode '(taut-message-mode taut-thread-mode)))

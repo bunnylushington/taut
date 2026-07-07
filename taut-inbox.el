@@ -20,6 +20,9 @@
 (declare-function taut-message-open "taut-message" (chan-id &optional other-window))
 (declare-function taut-thread-open "taut-thread" (thread-ts &optional channel-id))
 (declare-function taut-search-quick "taut-search")
+(declare-function taut-setup-strict-windows "taut")
+
+(defvar taut-strict-windows)
 
 
 ;;;; Faces
@@ -107,6 +110,10 @@
   "The current active filter in Slack Activity.
 Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 
+(defvar-local taut-inbox-date-filter 'last-7
+  "The current active date filter in Slack Activity.
+Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
+
 (defvar taut-inbox-mode-map (make-sparse-keymap)
   "Keymap for `taut-inbox-mode`.")
 
@@ -122,6 +129,10 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
 (define-key taut-inbox-mode-map (kbd "D") #'taut-inbox-filter-dms)
 (define-key taut-inbox-mode-map (kbd "m") #'taut-inbox-filter-mentions)
 (define-key taut-inbox-mode-map (kbd "t") #'taut-inbox-filter-threads)
+(define-key taut-inbox-mode-map (kbd "1") #'taut-inbox-date-filter-today)
+(define-key taut-inbox-mode-map (kbd "2") #'taut-inbox-date-filter-last-7)
+(define-key taut-inbox-mode-map (kbd "3") #'taut-inbox-date-filter-last-30)
+(define-key taut-inbox-mode-map (kbd "4") #'taut-inbox-date-filter-all)
 (define-key taut-inbox-mode-map (kbd "?") #'taut-dispatch)
 (define-key taut-inbox-mode-map (kbd "/") #'taut-search-quick)
 
@@ -132,6 +143,8 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
   (setq buffer-read-only t
         truncate-lines t)
   (setq-local taut-inbox-filter 'all)
+  (setq-local taut-inbox-date-filter 'last-7
+)
   (hl-line-mode 1))
 
 ;;;; Rendering Engine
@@ -167,13 +180,29 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
             (propertize "[m] Mentions" 'face mentions-face 'help-echo "Show mentions only") "  •  "
             (propertize "[t] Threads" 'face threads-face 'help-echo "Show thread updates only")))
   (insert "\n")
-  (insert "  Active: " (propertize (upcase (symbol-name taut-inbox-filter)) 'face '(:weight bold :foreground "#36c5f0")) "\n")
+
+  ;; Render date filters bar
+  (insert "     Date: ")
+  (let ((today-face (if (eq taut-inbox-date-filter 'today) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
+        (last-7-face (if (eq taut-inbox-date-filter 'last-7) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
+        (last-30-face (if (eq taut-inbox-date-filter 'last-30) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
+        (all-date-face (if (eq taut-inbox-date-filter 'all) 'taut-inbox-filter-active 'taut-inbox-filter-inactive)))
+    (insert (propertize "[1] Today" 'face today-face 'help-echo "Filter by today") "  •  "
+            (propertize "[2] Last 7 Days" 'face last-7-face 'help-echo "Filter by last 7 days") "  •  "
+            (propertize "[3] Last 30 Days" 'face last-30-face 'help-echo "Filter by last 30 days") "  •  "
+            (propertize "[4] All Time" 'face all-date-face 'help-echo "Show all time")))
+  (insert "\n")
+
+  (insert "  Active: " (propertize (upcase (symbol-name taut-inbox-filter)) 'face '(:weight bold :foreground "#36c5f0"))
+          "  •  Date: " (propertize (upcase (symbol-name (or taut-inbox-date-filter 'last-7))) 'face '(:weight bold :foreground "#36c5f0")) "\n")
   (insert (propertize "--------------------------------------------------------------------------------\n\n" 'face 'font-lock-comment-face)))
 
 (defun taut-inbox--render-feed ()
   "Query the model and render inbox rows into the current buffer."
   (unless taut-inbox-filter
     (setq taut-inbox-filter 'all))
+  (unless taut-inbox-date-filter
+    (setq taut-inbox-date-filter 'last-7))
   (taut-inbox--render-header)
   
   (let* ((all-items (if (fboundp 'taut-model-get-activity-items)
@@ -185,13 +214,15 @@ Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
            (lambda (item)
              (let ((type (taut-inbox-item-type item))
                    (is-read (taut-inbox-item-is-read item)))
-               (cond
-                ((eq taut-inbox-filter 'all)      t)
-                ((eq taut-inbox-filter 'unreads)  (not is-read))
-                ((eq taut-inbox-filter 'dms)      (eq type 'dm))
-                ((eq taut-inbox-filter 'mentions) (eq type 'mention))
-                ((eq taut-inbox-filter 'threads)  (eq type 'thread-update))
-                (t t))))
+               (and
+                (cond
+                 ((eq taut-inbox-filter 'all)      t)
+                 ((eq taut-inbox-filter 'unreads)  (not is-read))
+                 ((eq taut-inbox-filter 'dms)      (eq type 'dm))
+                 ((eq taut-inbox-filter 'mentions) (eq type 'mention))
+                 ((eq taut-inbox-filter 'threads)  (eq type 'thread-update))
+                 (t t))
+                (taut-inbox--item-matches-date-filter-p item))))
            all-items))
          ;; Sort items: chronologically descending by timestamp
          (sorted-items
@@ -305,24 +336,50 @@ Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
                                'mouse-face 'highlight))
     (insert "\n")))
 
+(defun taut-inbox--item-matches-date-filter-p (item)
+  "Return non-nil if ITEM matches the current `taut-inbox-date-filter`."
+  (let ((ts (taut-inbox-item-ts item)))
+    (if (or (null taut-inbox-date-filter) (eq taut-inbox-date-filter 'all))
+        t
+      (if (and ts (string-match "^\\([0-9]+\\)" ts))
+          (let* ((epoch (string-to-number (match-string 1 ts)))
+                 (now (float-time))
+                 (time-val (seconds-to-time epoch))
+                 (now-val (seconds-to-time now))
+                 (item-days (time-to-days time-val))
+                 (now-days (time-to-days now-val))
+                 (day-diff (- now-days item-days)))
+            (cond
+             ((eq taut-inbox-date-filter 'today)
+              (<= day-diff 0))
+             ((eq taut-inbox-date-filter 'last-7)
+              (< day-diff 7))
+             ((eq taut-inbox-date-filter 'last-30)
+              (< day-diff 30))
+             (t t)))
+        nil))))
+
 (defun taut-inbox--format-relative-date (ts-str)
   "Format Slack timestamp TS-STR into a relative date string.
 Includes representations like Today, Yesterday, day of week, or date."
   (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
       (let* ((epoch (string-to-number (match-string 1 ts-str)))
              (now (float-time))
-             (diff (- now epoch))
-             (time-val (seconds-to-time epoch)))
+             (time-val (seconds-to-time epoch))
+             (now-val (seconds-to-time now))
+             (item-days (time-to-days time-val))
+             (now-days (time-to-days now-val))
+             (day-diff (- now-days item-days)))
         (cond
-         ((< diff 86400)
+         ((<= day-diff 0)
           (format-time-string "Today %H:%M" time-val))
-         ((< diff 172800)
+         ((= day-diff 1)
           (format-time-string "Yesterday %H:%M" time-val))
-         ((< diff 604800)
+         ((< day-diff 7)
           (format-time-string "%A %H:%M" time-val))
          (t
           (let ((item-year (format-time-string "%Y" time-val))
-                (current-year (format-time-string "%Y")))
+                (current-year (format-time-string "%Y" now-val)))
             (if (equal item-year current-year)
                 (format-time-string "%b %d" time-val)
               (format-time-string "%b %d, %Y" time-val))))))
@@ -334,19 +391,46 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
   (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
       (let* ((epoch (string-to-number (match-string 1 ts-str)))
              (now (float-time))
-             (diff (- now epoch))
-             (time-val (seconds-to-time epoch)))
+             (time-val (seconds-to-time epoch))
+             (now-val (seconds-to-time now))
+             (item-days (time-to-days time-val))
+             (now-days (time-to-days now-val))
+             (day-diff (- now-days item-days)))
         (cond
-         ((< diff 86400) "Today")
-         ((< diff 172800) "Yesterday")
-         ((< diff 604800) (format-time-string "%A" time-val))
+         ((<= day-diff 0) "Today")
+         ((= day-diff 1) "Yesterday")
+         ((< day-diff 7) (format-time-string "%A" time-val))
          (t
           (let ((item-year (format-time-string "%Y" time-val))
-                (current-year (format-time-string "%Y")))
+                (current-year (format-time-string "%Y" now-val)))
             (if (equal item-year current-year)
                 (format-time-string "%B %d" time-val)
               (format-time-string "%B %d, %Y" time-val))))))
     "Older Activity"))
+
+(defun taut-inbox-date-filter-today ()
+  "Filter inbox to show only today's activity."
+  (interactive)
+  (setq taut-inbox-date-filter 'today)
+  (taut-inbox-refresh))
+
+(defun taut-inbox-date-filter-last-7 ()
+  "Filter inbox to show only last 7 days' activity."
+  (interactive)
+  (setq taut-inbox-date-filter 'last-7)
+  (taut-inbox-refresh))
+
+(defun taut-inbox-date-filter-last-30 ()
+  "Filter inbox to show only last 30 days' activity."
+  (interactive)
+  (setq taut-inbox-date-filter 'last-30)
+  (taut-inbox-refresh))
+
+(defun taut-inbox-date-filter-all ()
+  "Filter inbox to show all activity."
+  (interactive)
+  (setq taut-inbox-date-filter 'all)
+  (taut-inbox-refresh))
 
 (defun taut-inbox--clean-snippet (text)
   "Clean and truncate TEXT for display as an inbox snippet."
@@ -514,21 +598,30 @@ Returns non-nil if the buffer was found and focused."
 (defun taut-inbox-show ()
   "Display the Slack Activity in the active central window."
   (interactive)
-  (taut-ensure-consolidated-workspace)
-  (let ((buf (get-buffer-create "*Slack Activity*"))
-        (sidebar-win (get-buffer-window "*Taut Sidebar*")))
-    (with-current-buffer buf
-      (unless (eq major-mode 'taut-inbox-mode)
-        (taut-inbox-mode)))
-    (unless (taut-inbox--focus-buffer buf)
-      (cond
-       ((and sidebar-win (eq (selected-window) sidebar-win))
-        (select-window (next-window sidebar-win))
-        (switch-to-buffer buf))
-       (t
-        (switch-to-buffer buf))))
-    (taut-inbox-refresh)
-    buf))
+  (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+      (let ((activity-win (get-buffer-window "*Slack Activity*")))
+        (if activity-win
+            (select-window activity-win)
+          (taut-setup-strict-windows)
+          (setq activity-win (get-buffer-window "*Slack Activity*"))
+          (when activity-win
+            (select-window activity-win)))
+        (get-buffer "*Slack Activity*"))
+    (taut-ensure-consolidated-workspace)
+    (let ((buf (get-buffer-create "*Slack Activity*"))
+          (sidebar-win (get-buffer-window "*Taut Sidebar*")))
+      (with-current-buffer buf
+        (unless (eq major-mode 'taut-inbox-mode)
+          (taut-inbox-mode)))
+      (unless (taut-inbox--focus-buffer buf)
+        (cond
+         ((and sidebar-win (eq (selected-window) sidebar-win))
+          (select-window (next-window sidebar-win))
+          (switch-to-buffer buf))
+         (t
+          (switch-to-buffer buf))))
+      (taut-inbox-refresh)
+      buf)))
 
 (defun taut-inbox-bury ()
   "Bury the Slack Activity buffer."

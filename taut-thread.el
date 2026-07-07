@@ -17,6 +17,9 @@
 (require 'taut-api)
 (require 'taut-compose)
 
+(declare-function taut-get-chat-window "taut")
+(defvar taut-strict-windows)
+
 (declare-function taut-dispatch "taut-transient")
 (declare-function taut-message-upload-file "taut-message")
 (declare-function taut-message-edit "taut-message")
@@ -172,27 +175,31 @@ using local cache fallback strategies."
           (ignore-errors (taut-api-fetch-replies chan-id thread-ts))))
       (taut-thread-refresh))
 
-    ;; Window management: place thread window on the right side of the main area
-    (let ((window (get-buffer-window buf)))
-      (unless window
-        ;; Find a suitable window to split (ignore sidebar if possible)
-        (let* ((sidebar-buf (get-buffer "*Taut Sidebar*"))
-               (sidebar-win (and sidebar-buf (get-buffer-window sidebar-buf)))
-               (target-win (if (and sidebar-win (eq (selected-window) sidebar-win))
-                               (next-window sidebar-win)
-                             (selected-window))))
-          ;; Split selected window to place thread on the right
-          (let ((right-window (split-window target-win nil 'right)))
-            (set-window-buffer right-window buf)
-            (setq window right-window))))
-      (select-window window)
-      (goto-char (point-max))
-      ;; Refresh conversation buffers to update parent highlighting
-      (dolist (buffer (buffer-list))
-        (with-current-buffer buffer
-          (when (eq major-mode 'taut-message-mode)
-            (taut-message-refresh))))
-      buf)))
+    (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+        (let ((chat-win (taut-get-chat-window)))
+          (set-window-buffer chat-win buf)
+          (select-window chat-win))
+      ;; Window management: place thread window on the right side of the main area
+      (let ((window (get-buffer-window buf)))
+        (unless window
+          ;; Find a suitable window to split (ignore sidebar if possible)
+          (let* ((sidebar-buf (get-buffer "*Taut Sidebar*"))
+                 (sidebar-win (and sidebar-buf (get-buffer-window sidebar-buf)))
+                 (target-win (if (and sidebar-win (eq (selected-window) sidebar-win))
+                                 (next-window sidebar-win)
+                               (selected-window))))
+            ;; Split selected window to place thread on the right
+            (let ((right-window (split-window target-win nil 'right)))
+              (set-window-buffer right-window buf)
+              (setq window right-window))))
+        (select-window window)))
+    (goto-char (point-max))
+    ;; Refresh conversation buffers to update parent highlighting
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (eq major-mode 'taut-message-mode)
+          (taut-message-refresh))))
+    buf))
 
 (defun taut-thread-send ()
   "Start composing a thread reply using the compose buffer."
@@ -209,7 +216,16 @@ using local cache fallback strategies."
   (interactive)
   (let ((window (get-buffer-window "*Taut Thread*")))
     (if window
-        (delete-window window)
+        (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+            ;; In strict-windows mode, find the last conversation buffer or scratch and show it
+            (let ((prev-buf (cl-find-if (lambda (b)
+                                          (and (not (equal (buffer-name b) "*Slack Activity*"))
+                                               (not (equal (buffer-name b) "*Taut Sidebar*"))
+                                               (not (equal (buffer-name b) "*Taut Thread*"))
+                                               (eq (buffer-local-value 'major-mode b) 'taut-message-mode)))
+                                        (buffer-list))))
+              (set-window-buffer window (or prev-buf (get-buffer-create "*scratch*"))))
+          (delete-window window))
       (bury-buffer))
     ;; Refresh conversation buffers to clear highlighting
     (dolist (buffer (buffer-list))

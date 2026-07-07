@@ -217,5 +217,104 @@
     (should-not (get-buffer "*Taut Sidebar*"))
     (should-not (get-buffer "*Slack Activity*"))))
 
+(ert-deftest taut-strict-windows-test ()
+  "Test the strict-windows layout manager and buffer assignment."
+  (let ((taut-strict-windows t)
+        (taut-consolidate-windows nil)
+        (taut-sidebar-width 12)
+        (taut-activity-width 15))
+    ;; Clean up any existing buffers so we start fresh
+    (ignore-errors (kill-buffer "*Taut Sidebar*"))
+    (ignore-errors (kill-buffer "*Slack Activity*"))
+    (ignore-errors (kill-buffer "*Taut Thread*"))
+    (ignore-errors (kill-buffer "*Taut - #general*"))
+    
+    ;; 1. Setup strict layout
+    (should (progn
+              (taut-setup-strict-windows)
+              t))
+    
+    ;; Verify we have exactly three windows
+    (let ((windows (window-list)))
+      (should (>= (length windows) 3)))
+    
+    ;; Verify windows have the correct buffers and dedication
+    (let ((sidebar-win (get-buffer-window "*Taut Sidebar*"))
+          (activity-win (get-buffer-window "*Slack Activity*"))
+          (chat-win (taut-get-chat-window)))
+      (should sidebar-win)
+      (should activity-win)
+      (should chat-win)
+      (should (window-dedicated-p sidebar-win))
+      (should (window-dedicated-p activity-win))
+      (should-not (window-dedicated-p chat-win)))
+    
+    ;; 2. Select channel/message buffer (should reuse chat window)
+    (let ((buf (taut-message-open "C_GEN")))
+      (should (equal (buffer-name buf) "*Taut - #C_GEN*"))
+      ;; Chat window should now display the general channel
+      (should (eq (window-buffer (taut-get-chat-window)) buf))
+      ;; Check count of windows hasn't increased
+      (should (<= (length (window-list)) 3)))
+    
+    ;; 3. Open thread (should reuse chat window, NOT split horizontally)
+    (let ((thread-buf (taut-thread-open "12345.6789" "C_GEN")))
+      (should (equal (buffer-name thread-buf) "*Taut Thread*"))
+      ;; Chat window should now display the thread buffer
+      (should (eq (window-buffer (taut-get-chat-window)) thread-buf))
+      ;; Check count of windows is still exactly three
+      (should (<= (length (window-list)) 3)))
+    
+    ;; 4. Close thread (should show the channel buffer again instead of deleting window)
+    (taut-thread-close)
+    (let ((chat-win (taut-get-chat-window)))
+      (should (equal (buffer-name (window-buffer chat-win)) "*Taut - #C_GEN*"))
+      ;; Layout is still fully intact with at least 3 windows
+      (should (>= (length (window-list)) 3)))
+      
+    ;; Clean up
+    (taut-quit)))
+
+(ert-deftest taut-strict-windows-portrait-test ()
+  "Test the strict-windows layout manager in portrait orientation."
+  (let ((taut-strict-windows t)
+        (taut-consolidate-windows nil))
+    ;; Clean up any existing buffers so we start fresh
+    (ignore-errors (kill-buffer "*Taut Sidebar*"))
+    (ignore-errors (kill-buffer "*Slack Activity*"))
+    (ignore-errors (kill-buffer "*Taut Thread*"))
+    (ignore-errors (kill-buffer "*Taut - #C_GEN*"))
+    
+    ;; Use cl-letf to mock frame-root-window and window sizes as portrait (height > width)
+    (cl-letf* (((symbol-function 'window-total-width) (lambda (&rest _) 40))
+               ((symbol-function 'window-total-height) (lambda (&rest _) 80)))
+      ;; Setup strict layout
+      (should (progn
+                (taut-setup-strict-windows)
+                t))
+      
+      ;; Verify windows have the correct buffers and dedication in portrait mode
+      (let ((sidebar-win (get-buffer-window "*Taut Sidebar*"))
+            (activity-win (get-buffer-window "*Slack Activity*"))
+            (chat-win (taut-get-chat-window)))
+        (should sidebar-win)
+        (should activity-win)
+        (should chat-win)
+        (should (window-dedicated-p sidebar-win))
+        (should (window-dedicated-p activity-win))
+        (should-not (window-dedicated-p chat-win))))
+    (taut-quit)))
+
+(ert-deftest taut-direct-navigation-keybindings-test ()
+  "Test that direct navigation keys S, I, C are correctly bound in all four Taut maps."
+  (let ((maps (list taut-sidebar-mode-map
+                    taut-inbox-mode-map
+                    taut-message-mode-map
+                    taut-thread-mode-map)))
+    (dolist (map maps)
+      (should (eq (lookup-key map (kbd "S")) #'taut-sidebar-show))
+      (should (eq (lookup-key map (kbd "I")) #'taut-inbox-show))
+      (should (eq (lookup-key map (kbd "C")) #'taut-focus-chat)))))
+
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here

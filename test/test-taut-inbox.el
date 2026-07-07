@@ -80,22 +80,66 @@
   (taut-initialize-mock-data)
   (setq taut-current-user-id "U_ME")
   
-  (with-temp-buffer
-    (let ((inhibit-read-only t)
-          (taut-use-icons nil))
-      ;; Call the rendering function of the inbox feed
-      (taut-inbox--render-feed)
+  (cl-letf (((symbol-function 'float-time) (lambda () 1688500000.0)))
+    (with-temp-buffer
+      (let ((inhibit-read-only t)
+            (taut-use-icons nil))
+        ;; Call the rendering function of the inbox feed
+        (taut-inbox--render-feed)
+        
+        (let ((content (buffer-string)))
+          ;; The mock data from taut-initialize-mock-data should generate some unread items:
+          ;; - Bob Jones DM has is-unread t (C_BOB_DM, user-id U_BOB, "Did you get that script command...")
+          ;; So it should render.
+          (should (string-match-p "Bob Jones" content))
+          (should (string-match-p "Did you get that script command" content))
+          ;; Verify the bullet point/unread star is present:
+          (should (string-match-p "●" content))
+          ;; Verify DM badge:
+          (should (string-match-p "DM" content)))))))
+
+(ert-deftest taut-inbox-date-filtering-test ()
+  "Test that date filtering works as expected for today, last 7 days, last 30 days, and all time."
+  (cl-letf (((symbol-function 'float-time) (lambda () 1688500000.0)))
+    ;; 1688500000.0 is Tuesday, July 4, 2023.
+    (let* ((item-today (make-taut-inbox-item :ts "1688500000.0000")) ; day-diff = 0
+           (item-yesterday (make-taut-inbox-item :ts "1688413600.0000")) ; day-diff = 1
+           (item-6-days-ago (make-taut-inbox-item :ts "1687981600.0000")) ; day-diff = 6
+           (item-8-days-ago (make-taut-inbox-item :ts "1687808800.0000")) ; day-diff = 8
+           (item-29-days-ago (make-taut-inbox-item :ts "1685994400.0000")) ; day-diff = 29
+           (item-35-days-ago (make-taut-inbox-item :ts "1685476000.0000"))) ; day-diff = 35
       
-      (let ((content (buffer-string)))
-        ;; The mock data from taut-initialize-mock-data should generate some unread items:
-        ;; - Bob Jones DM has is-unread t (C_BOB_DM, user-id U_BOB, "Did you get that script command...")
-        ;; So it should render.
-        (should (string-match-p "Bob Jones" content))
-        (should (string-match-p "Did you get that script command" content))
-        ;; Verify the bullet point/unread star is present:
-        (should (string-match-p "●" content))
-        ;; Verify DM badge:
-        (should (string-match-p "DM" content))))))
+      ;; Test 'today filter
+      (let ((taut-inbox-date-filter 'today))
+        (should (taut-inbox--item-matches-date-filter-p item-today))
+        (should-not (taut-inbox--item-matches-date-filter-p item-yesterday))
+        (should-not (taut-inbox--item-matches-date-filter-p item-6-days-ago))
+        (should-not (taut-inbox--item-matches-date-filter-p item-8-days-ago)))
+
+      ;; Test 'last-7 filter
+      (let ((taut-inbox-date-filter 'last-7))
+        (should (taut-inbox--item-matches-date-filter-p item-today))
+        (should (taut-inbox--item-matches-date-filter-p item-yesterday))
+        (should (taut-inbox--item-matches-date-filter-p item-6-days-ago))
+        (should-not (taut-inbox--item-matches-date-filter-p item-8-days-ago)))
+
+      ;; Test 'last-30 filter
+      (let ((taut-inbox-date-filter 'last-30))
+        (should (taut-inbox--item-matches-date-filter-p item-today))
+        (should (taut-inbox--item-matches-date-filter-p item-yesterday))
+        (should (taut-inbox--item-matches-date-filter-p item-6-days-ago))
+        (should (taut-inbox--item-matches-date-filter-p item-8-days-ago))
+        (should (taut-inbox--item-matches-date-filter-p item-29-days-ago))
+        (should-not (taut-inbox--item-matches-date-filter-p item-35-days-ago)))
+
+      ;; Test 'all filter
+      (let ((taut-inbox-date-filter 'all))
+        (should (taut-inbox--item-matches-date-filter-p item-today))
+        (should (taut-inbox--item-matches-date-filter-p item-yesterday))
+        (should (taut-inbox--item-matches-date-filter-p item-6-days-ago))
+        (should (taut-inbox--item-matches-date-filter-p item-8-days-ago))
+        (should (taut-inbox--item-matches-date-filter-p item-29-days-ago))
+        (should (taut-inbox--item-matches-date-filter-p item-35-days-ago))))))
 
 (provide 'test-taut-inbox)
 ;;; test-taut-inbox.el ends here

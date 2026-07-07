@@ -39,6 +39,24 @@ Accepted values are:
                  (const :tag "Auto (tab if tab-bar is active, else frame)" auto))
   :group 'taut)
 
+(defcustom taut-strict-windows nil
+  "Whether to enforce a strict three-column window layout.
+When non-nil, Taut maintains exactly three columns: Sidebar, Activity, and Chat.
+The Sidebar and Activity windows are marked as dedicated so that selected channels,
+DMs, or threads always open in the dedicated Chat/Thread window."
+  :type 'boolean
+  :group 'taut)
+
+(defcustom taut-activity-width 50
+  "The fixed width of the Slack Activity (inbox) window in strict-windows mode."
+  :type 'integer
+  :group 'taut)
+
+(defcustom taut-chat-width 120
+  "The fixed width of the Slack Chat (conversation) window in strict-windows mode."
+  :type 'integer
+  :group 'taut)
+
 (defun taut-consolidate-method ()
   "Determine the active consolidation method (`tab', `frame', or nil)."
   (cond

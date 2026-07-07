@@ -43,6 +43,23 @@
 (define-key taut-message-mode-map (kbd "j") #'taut-jump)
 (define-key taut-thread-mode-map (kbd "j") #'taut-jump)
 
+;;;; Global Keybindings for navigation
+(define-key taut-sidebar-mode-map (kbd "S") #'taut-sidebar-show)
+(define-key taut-sidebar-mode-map (kbd "I") #'taut-inbox-show)
+(define-key taut-sidebar-mode-map (kbd "C") #'taut-focus-chat)
+
+(define-key taut-inbox-mode-map (kbd "S") #'taut-sidebar-show)
+(define-key taut-inbox-mode-map (kbd "I") #'taut-inbox-show)
+(define-key taut-inbox-mode-map (kbd "C") #'taut-focus-chat)
+
+(define-key taut-message-mode-map (kbd "S") #'taut-sidebar-show)
+(define-key taut-message-mode-map (kbd "I") #'taut-inbox-show)
+(define-key taut-message-mode-map (kbd "C") #'taut-focus-chat)
+
+(define-key taut-thread-mode-map (kbd "S") #'taut-sidebar-show)
+(define-key taut-thread-mode-map (kbd "I") #'taut-inbox-show)
+(define-key taut-thread-mode-map (kbd "C") #'taut-focus-chat)
+
 ;;;; Global Minor Mode / Initialization Commands
 
 ;;;###autoload
@@ -201,7 +218,9 @@ Stop simulators, close WebSocket, kill buffers, and restore windows."
         (let ((buf (window-buffer win)))
           (when (memq (buffer-local-value 'major-mode buf) taut-modes)
             (if (one-window-p nil frame)
-                (set-window-buffer win (get-buffer-create "*scratch*"))
+                (progn
+                  (set-window-dedicated-p win nil)
+                  (set-window-buffer win (get-buffer-create "*scratch*")))
               (ignore-errors (delete-window win)))))))
     
     ;; 6. Kill all identified Taut buffers
@@ -211,29 +230,181 @@ Stop simulators, close WebSocket, kill buffers, and restore windows."
     (message "Taut: Hard quit complete.")))
 
 ;;;###autoload
+(defun taut-setup-strict-windows ()
+  "Set up the strict window layout.
+If the frame is in landscape orientation, arranges windows in three columns:
+Sidebar on the left, Activity in the middle, and Chat/Thread on the right.
+If the frame is in portrait orientation, stacks them vertically in three rows."
+  (interactive)
+  (taut-ensure-consolidated-workspace)
+  (let* ((sidebar-buf (get-buffer-create "*Taut Sidebar*"))
+         (activity-buf (get-buffer-create "*Slack Activity*")))
+    (with-current-buffer sidebar-buf
+      (unless (eq major-mode 'taut-sidebar-mode)
+        (taut-sidebar-mode)))
+    (with-current-buffer activity-buf
+      (unless (eq major-mode 'taut-inbox-mode)
+        (taut-inbox-mode)))
+    
+    (dolist (win (window-list))
+      (set-window-dedicated-p win nil))
+    (delete-other-windows)
+    (let ((window-min-width 1)
+          (window-min-height 1))
+      (let* ((chat-buf (cl-find-if (lambda (b)
+                                    (and (not (equal (buffer-name b) "*Slack Activity*"))
+                                         (not (equal (buffer-name b) "*Taut Sidebar*"))
+                                         (or (eq (buffer-local-value 'major-mode b) 'taut-message-mode)
+                                             (eq (buffer-local-value 'major-mode b) 'taut-thread-mode))))
+                                  (buffer-list)))
+             (frame-w (window-total-width (frame-root-window)))
+             (frame-h (window-total-height (frame-root-window)))
+             (is-landscape (> frame-w frame-h)))
+        
+        (if is-landscape
+            (let* ((sidebar-w (or (and (boundp 'taut-sidebar-width) taut-sidebar-width) 30))
+                   (activity-w (or (and (boundp 'taut-activity-width) taut-activity-width) 50))
+                   (chat-w (or (and (boundp 'taut-chat-width) taut-chat-width) 120))
+                   (total-needed (+ sidebar-w activity-w chat-w)))
+              (if (>= frame-w total-needed)
+                  ;; 1. Horizontal layout (precise widths)
+                  (let* ((left-win (selected-window))
+                         (middle-win (split-window left-win sidebar-w 'right))
+                         (right-win (split-window middle-win (- (window-size middle-win t) chat-w) 'right)))
+                    (set-window-buffer left-win sidebar-buf)
+                    (set-window-buffer middle-win activity-buf)
+                    (set-window-buffer right-win (or chat-buf (get-buffer-create "*scratch*")))
+                    
+                    (set-window-dedicated-p left-win t)
+                    (set-window-dedicated-p middle-win t)
+                    (set-window-dedicated-p right-win nil)
+                    
+                    ;; Set and preserve sidebar window size
+                    (let ((delta (- sidebar-w (window-size left-win t))))
+                      (when (/= delta 0)
+                        (ignore-errors (window-resize left-win delta t))))
+                    (window-preserve-size left-win t t)
+                    
+                    ;; Set and preserve chat window size
+                    (let ((delta (- chat-w (window-size right-win t))))
+                      (when (/= delta 0)
+                        (ignore-errors (window-resize right-win delta t))))
+                    (window-preserve-size right-win t t)
+                    
+                    (select-window middle-win))
+                
+                ;; 2. Horizontal layout (proportional fallback for narrow screens)
+                (let* ((scale (/ (float frame-w) (float total-needed)))
+                       (s-w (max 10 (round (* sidebar-w scale))))
+                       (a-w (max 15 (round (* activity-w scale))))
+                       (left-win (selected-window))
+                       (middle-win (split-window left-win s-w 'right))
+                       (right-win (split-window middle-win a-w 'right)))
+                  (set-window-buffer left-win sidebar-buf)
+                  (set-window-buffer middle-win activity-buf)
+                  (set-window-buffer right-win (or chat-buf (get-buffer-create "*scratch*")))
+                  
+                  (set-window-dedicated-p left-win t)
+                  (set-window-dedicated-p middle-win t)
+                  (set-window-dedicated-p right-win nil)
+                  
+                  (let ((delta (- s-w (window-size left-win t))))
+                    (when (/= delta 0) (ignore-errors (window-resize left-win delta t))))
+                  (window-preserve-size left-win t t)
+                  
+                  (let ((delta (- a-w (window-size middle-win t))))
+                    (when (/= delta 0) (ignore-errors (window-resize middle-win delta t))))
+                  (window-preserve-size middle-win t t)
+                  
+                  (select-window middle-win))))
+          
+          ;; 3. Vertical/Portrait layout (stacked rows)
+          (let* ((real-h (frame-height))
+                 (sidebar-h (max 6 (round (* frame-h 0.15))))
+                 (activity-h (max 10 (round (* frame-h 0.25)))))
+            ;; Scale down heights if the physical frame height is too small to fit the simulated heights
+            (when (< real-h (+ sidebar-h activity-h 4))
+              (let ((scale (/ (float real-h) (float frame-h))))
+                (setq sidebar-h (max 3 (round (* sidebar-h scale))))
+                (setq activity-h (max 4 (round (* activity-h scale))))))
+            (let* ((top-win (selected-window))
+                   (middle-win (split-window top-win sidebar-h 'below))
+                   (bottom-win (split-window middle-win activity-h 'below)))
+              (set-window-buffer top-win sidebar-buf)
+              (set-window-buffer middle-win activity-buf)
+              (set-window-buffer bottom-win (or chat-buf (get-buffer-create "*scratch*")))
+              
+              (set-window-dedicated-p top-win t)
+              (set-window-dedicated-p middle-win t)
+              (set-window-dedicated-p bottom-win nil)
+              
+              ;; Set and preserve sidebar (top) window height
+              (let ((delta (- sidebar-h (window-size top-win))))
+                (when (/= delta 0)
+                  (ignore-errors (window-resize top-win delta nil))))
+              (window-preserve-size top-win nil t)
+              
+              ;; Set and preserve activity (middle) window height
+              (let ((delta (- activity-h (window-size middle-win))))
+                (when (/= delta 0)
+                  (ignore-errors (window-resize middle-win delta nil))))
+              (window-preserve-size middle-win nil t)
+              
+              (select-window middle-win))))))))
+
+;;;###autoload
+(defun taut-get-chat-window ()
+  "Return the non-dedicated window in the current frame, creating one if necessary."
+  (let ((sidebar-win (get-buffer-window "*Taut Sidebar*"))
+        (activity-win (get-buffer-window "*Slack Activity*"))
+        (chat-win nil))
+    (dolist (win (window-list))
+      (unless (window-dedicated-p win)
+        (setq chat-win win)))
+    (if (or (null chat-win) (null sidebar-win) (null activity-win))
+        (progn
+          (taut-setup-strict-windows)
+          (setq chat-win nil)
+        (dolist (win (window-list))
+            (unless (window-dedicated-p win)
+              (setq chat-win win)))
+          chat-win)
+      chat-win)))
+
+;;;###autoload
+(defun taut-focus-chat ()
+  "Select and focus the Taut chat/message window."
+  (interactive)
+  (let ((win (taut-get-chat-window)))
+    (when win
+      (select-window win))))
+
+;;;###autoload
 (defun taut-reset-layout ()
   "Reset the Taut window layout.
 Resets the sidebar window to `taut-sidebar-width`. If consolidation
 is enabled, also rebalances the remaining windows in the active tab/frame."
   (interactive)
-  (let* ((sidebar-buf (get-buffer "*Taut Sidebar*"))
-         (sidebar-win (and sidebar-buf (get-buffer-window sidebar-buf))))
-    (if (taut-consolidate-method)
-        ;; If consolidation is active, balance all windows first,
-        ;; then restore the sidebar to its configured width.
-        (progn
-          (balance-windows)
-          (when sidebar-win
-            (let ((delta (- taut-sidebar-width (window-total-width sidebar-win))))
-              (when (/= delta 0)
-                (ignore-errors
-                  (window-resize sidebar-win delta t))))))
-      ;; If not consolidating, just restore the sidebar width
-      (when sidebar-win
-        (let ((delta (- taut-sidebar-width (window-total-width sidebar-win))))
-          (when (/= delta 0)
-            (ignore-errors
-              (window-resize sidebar-win delta t))))))))
+  (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+      (taut-setup-strict-windows)
+    (let* ((sidebar-buf (get-buffer "*Taut Sidebar*"))
+           (sidebar-win (and sidebar-buf (get-buffer-window sidebar-buf))))
+      (if (taut-consolidate-method)
+          ;; If consolidation is active, balance all windows first,
+          ;; then restore the sidebar to its configured width.
+          (progn
+            (balance-windows)
+            (when sidebar-win
+              (let ((delta (- taut-sidebar-width (window-total-width sidebar-win))))
+                (when (/= delta 0)
+                  (ignore-errors
+                    (window-resize sidebar-win delta t))))))
+        ;; If not consolidating, just restore the sidebar width
+        (when sidebar-win
+          (let ((delta (- taut-sidebar-width (window-total-width sidebar-win))))
+            (when (/= delta 0)
+              (ignore-errors
+                (window-resize sidebar-win delta t)))))))))
 
 (defvar taut-mock-timer nil
   "Timer object running the background simulator (obsolete stub).")

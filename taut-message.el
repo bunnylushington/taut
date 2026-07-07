@@ -18,7 +18,9 @@
 (declare-function taut-message-reply-quote "taut-compose")
 (declare-function taut-thread-refresh "taut-thread")
 (declare-function taut-compose-open "taut-compose" (channel-id &optional thread-ts quote-msg edit-ts edit-text))
+(declare-function taut-get-chat-window "taut")
 
+(defvar taut-strict-windows)
 (defvar taut-current-thread-ts)
 
 (declare-function taut-code-block-dispatch "taut-transient")
@@ -1087,18 +1089,22 @@ If OTHER-WINDOW is non-nil, open the buffer in another window."
                     (error-message-string err)))))
       (taut-message-refresh))
     
-    ;; Make sure we don't open inside the Sidebar window
-    (let ((sidebar-win (get-buffer-window "*Taut Sidebar*")))
-      (cond
-       ((and sidebar-win (eq (selected-window) sidebar-win))
-        (select-window (next-window sidebar-win))
-        (if other-window
-            (switch-to-buffer-other-window buf)
-          (switch-to-buffer buf)))
-       (other-window
-        (switch-to-buffer-other-window buf))
-       (t
-        (switch-to-buffer buf))))
+    (if (and (boundp 'taut-strict-windows) taut-strict-windows)
+        (let ((chat-win (taut-get-chat-window)))
+          (set-window-buffer chat-win buf)
+          (select-window chat-win))
+      ;; Make sure we don't open inside the Sidebar window
+      (let ((sidebar-win (get-buffer-window "*Taut Sidebar*")))
+        (cond
+         ((and sidebar-win (eq (selected-window) sidebar-win))
+          (select-window (next-window sidebar-win))
+          (if other-window
+              (switch-to-buffer-other-window buf)
+            (switch-to-buffer buf)))
+         (other-window
+          (switch-to-buffer-other-window buf))
+         (t
+          (switch-to-buffer buf)))))
     
     (goto-char (point-max))
     (redisplay t)
