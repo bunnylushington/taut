@@ -697,6 +697,15 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
         (taut-model-trigger-update)))
     res))
 
+(defun taut-api-delete-message (channel-id ts)
+  "Delete an existing message identified by TS on CHANNEL-ID."
+  (let* ((params `((channel . ,channel-id)
+                   (ts . ,ts)))
+         (res (taut-api--request "chat.delete" params "POST")))
+    ;; Update local model state (mark deleted)
+    (taut-model-delete-message ts)
+    res))
+
 (defun taut-api-add-reaction (channel-id timestamp emoji)
   "Add EMOJI reaction to message at TIMESTAMP in CHANNEL-ID."
   ;; Remove bounding colons if present (e.g. ":thumbsup:" -> "thumbsup")
