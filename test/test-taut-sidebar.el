@@ -43,7 +43,7 @@
         (should (string-match-p "HIDDEN" content))
         
         ;; Verify inbox activity shortcut is rendered
-        (should (string-match-p "Slack Activity" content))
+        (should (string-match-p "Slack Inbox" content))
         
         ;; Verify channels lists
         (should (string-match-p "general" content))
@@ -240,14 +240,11 @@
       (let ((inhibit-read-only t)
             (taut-use-icons nil))
         (taut-sidebar--render-connection-status)
-        (let ((content (buffer-string)))
-          (should (string-match-p "○ Disconnected" content))
-          (should-not (string-match-p "● Connected" content))
-          ;; Check action text property
-          (goto-char (point-min))
-          (should (search-forward "Disconnected" nil t))
-          (backward-char 3)
-          (should (equal (get-text-property (point) 'taut-sidebar-action) #'taut-socket-status))))))
+        (let ((hlf header-line-format))
+          (should hlf)
+          (should (string-match-p "○" hlf))
+          (should (string-match-p "Offline" hlf))
+          (should-not (string-match-p "Connected" hlf))))))
 
   ;; 2. Check Connected rendering
   (let ((taut-socket-ws t))
@@ -256,14 +253,11 @@
         (let ((inhibit-read-only t)
               (taut-use-icons nil))
           (taut-sidebar--render-connection-status)
-          (let ((content (buffer-string)))
-            (should (string-match-p "● Connected" content))
-            (should-not (string-match-p "○ Disconnected" content))
-            ;; Check action text property
-            (goto-char (point-min))
-            (should (search-forward "Connected" nil t))
-            (backward-char 3)
-            (should (equal (get-text-property (point) 'taut-sidebar-action) #'taut-socket-status))))))))
+          (let ((hlf header-line-format))
+            (should hlf)
+            (should (string-match-p "●" hlf))
+            (should (string-match-p "Connected" hlf))
+            (should-not (string-match-p "Offline" hlf))))))))
 
 (provide 'test-taut-sidebar)
 ;;; test-taut-sidebar.el ends here

@@ -723,21 +723,22 @@ history from API first."
          (chan-topic (if chan (taut-channel-topic chan) "(no topic set)"))
          (msgs (taut-model-get-messages chan-id)))
     ;; Set buffer-local header-line-format for an anchored premium header
-    (setq header-line-format
-          (concat
-           (propertize (if (eq chan-type 'dm)
-                           (format " 👤 @%s" chan-name)
-                         (format " ♯ %s" chan-name))
-                       'face '(:weight bold :foreground "#36c5f0"))
-           (propertize (format "  |  %s" (or chan-topic "(no topic set)"))
-                       'face 'font-lock-comment-face)))
+    (setq-local header-line-format
+                (concat
+                 (propertize (if (eq chan-type 'dm)
+                                 (format " 👤 @%s" chan-name)
+                               (format " ♯ %s" chan-name))
+                             'face '(:weight bold :foreground "#36c5f0"))
+                 (propertize (format "  |  %s" (or chan-topic "(no topic set)"))
+                             'face 'font-lock-comment-face)))
 
     (insert "\n")
 
     (if (null msgs)
         (insert "\n\n  No messages in this conversation yet. Send a message with `r`!\n")
       (dolist (msg msgs)
-        (taut-message--render-message-line msg)))))
+        (taut-message--render-message-line msg)))
+    (force-mode-line-update t)))
 
 (defun taut-message--huddle-message-p (text)
   "Return non-nil if TEXT represents a Slack Huddle message."

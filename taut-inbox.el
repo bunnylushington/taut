@@ -114,11 +114,11 @@
 ;;;; Major Mode Definition
 
 (defvar-local taut-inbox-filter 'all
-  "The current active filter in Slack Activity.
+  "The current active filter in Slack Inbox.
 Can be \\='all, \\='unreads, \\='dms, \\='mentions, \\='threads, or \\='code.")
 
 (defvar-local taut-inbox-date-filter 'last-7
-  "The current active date filter in Slack Activity.
+  "The current active date filter in Slack Inbox.
 Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
 
 (defvar taut-inbox-mode-map (make-sparse-keymap)
@@ -144,15 +144,14 @@ Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
 (define-key taut-inbox-mode-map (kbd "?") #'taut-dispatch)
 (define-key taut-inbox-mode-map (kbd "/") #'taut-search-quick)
 
-(define-derived-mode taut-inbox-mode special-mode "Slack Activity"
-  "Major mode for Taut Slack Activity.
+(define-derived-mode taut-inbox-mode special-mode "Slack Inbox"
+  "Major mode for Taut Slack Inbox.
 
 \\{taut-inbox-mode-map}"
   (setq buffer-read-only t
         truncate-lines t)
   (setq-local taut-inbox-filter 'all)
-  (setq-local taut-inbox-date-filter 'last-7
-)
+  (setq-local taut-inbox-date-filter 'last-7)
   (hl-line-mode 1))
 
 ;;;; Rendering Engine
@@ -171,9 +170,9 @@ Returns nil if not found."
       found)))
 
 (defun taut-inbox-refresh ()
-  "Redraw the Slack Activity buffer contents if it exists and is visible."
+  "Redraw the Slack Inbox buffer contents if it exists and is visible."
   (interactive)
-  (let ((buf (get-buffer "*Slack Activity*")))
+  (let ((buf (get-buffer "*Slack Inbox*")))
     (when buf
       (with-current-buffer buf
         (let ((inhibit-read-only t)
@@ -190,6 +189,13 @@ Returns nil if not found."
               (let ((win-item (get-text-property (point) 'taut-inbox-item)))
                 (when win-item
                   (setq current-item-id (taut-inbox-item-id win-item))))))
+          (setq-local header-line-format
+                      (concat
+                       (propertize " 📥 SLACK INBOX" 'face '(:weight bold :foreground "#e01e5a"))
+                       (propertize (format "  |  Filter: %s  |  Date: %s"
+                                           (upcase (symbol-name (or taut-inbox-filter 'all)))
+                                           (upcase (symbol-name (or taut-inbox-date-filter 'last-7))))
+                                   'face 'font-lock-comment-face)))
           (erase-buffer)
           (taut-inbox--render-feed)
           (let ((target-point nil))
@@ -199,14 +205,12 @@ Returns nil if not found."
               (setq target-point (min (or win-point old-point) (point-max))))
             (goto-char target-point)
             (when win
-              (set-window-point win target-point))))))))
+              (set-window-point win target-point))
+            (force-mode-line-update t)))))))
 
 (defun taut-inbox--render-header ()
   "Render a beautiful header with navigation and active filter indication."
-  (insert (propertize "================================================================================\n" 'face 'font-lock-comment-face))
-  (insert (propertize "  💬 SLACK ACTIVITY\n" 'face '(:weight bold :height 1.2 :foreground "#e01e5a")))
-  (insert (propertize "================================================================================\n" 'face 'font-lock-comment-face))
-  
+  (insert "\n")
   ;; Render filters bar
   (insert "  Filters: ")
   (let ((all-face (if (eq taut-inbox-filter 'all) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
@@ -235,8 +239,6 @@ Returns nil if not found."
             (propertize "[4] All Time" 'face all-date-face 'help-echo "Show all time")))
   (insert "\n")
 
-  (insert "  Active: " (propertize (upcase (symbol-name taut-inbox-filter)) 'face '(:weight bold :foreground "#36c5f0"))
-          "  •  Date: " (propertize (upcase (symbol-name (or taut-inbox-date-filter 'last-7))) 'face '(:weight bold :foreground "#36c5f0")) "\n")
   (insert (propertize "--------------------------------------------------------------------------------\n\n" 'face 'font-lock-comment-face)))
 
 (defun taut-inbox--render-feed ()
@@ -569,14 +571,14 @@ Returns the item if found, nil otherwise."
 
 ;;;###autoload
 (defun taut-inbox-next ()
-  "Move to the next visible message in the Slack Activity buffer and activate it."
+  "Move to the next visible message in the Slack Inbox buffer and activate it."
   (interactive)
-  (let ((buf (get-buffer "*Slack Activity*")))
+  (let ((buf (get-buffer "*Slack Inbox*")))
     (if (null buf)
-        (message "Slack Activity buffer does not exist.")
+        (message "Slack Inbox buffer does not exist.")
       (let ((win (get-buffer-window buf t)))
         (if (null win)
-            (message "Slack Activity window is not visible.")
+            (message "Slack Inbox window is not visible.")
           (with-selected-window win
             (with-current-buffer buf
               (let ((orig-point (point)))
@@ -585,18 +587,18 @@ Returns the item if found, nil otherwise."
                       (recenter)
                       (taut-inbox-activate))
                   (goto-char orig-point)
-                  (message "End of Slack Activity."))))))))))
+                  (message "End of Slack Inbox."))))))))))
 
 ;;;###autoload
 (defun taut-inbox-prev ()
-  "Move to the previous visible message in the Slack Activity buffer and activate it."
+  "Move to the previous visible message in the Slack Inbox buffer and activate it."
   (interactive)
-  (let ((buf (get-buffer "*Slack Activity*")))
+  (let ((buf (get-buffer "*Slack Inbox*")))
     (if (null buf)
-        (message "Slack Activity buffer does not exist.")
+        (message "Slack Inbox buffer does not exist.")
       (let ((win (get-buffer-window buf t)))
         (if (null win)
-            (message "Slack Activity window is not visible.")
+            (message "Slack Inbox window is not visible.")
           (with-selected-window win
             (with-current-buffer buf
               (let ((orig-point (point)))
@@ -605,7 +607,7 @@ Returns the item if found, nil otherwise."
                       (recenter)
                       (taut-inbox-activate))
                   (goto-char orig-point)
-                  (message "Beginning of Slack Activity."))))))))))
+                  (message "Beginning of Slack Inbox."))))))))))
 
 (defun taut-inbox-mark-read ()
   "Dismiss/Mark read the item under the cursor."
@@ -724,19 +726,19 @@ Returns non-nil if the buffer was found and focused."
     found)))
 
 (defun taut-inbox-show ()
-  "Display the Slack Activity in the active central window."
+  "Display the Slack Inbox in the active central window."
   (interactive)
   (if (and (boundp 'taut-strict-windows) taut-strict-windows)
-      (let ((activity-win (get-buffer-window "*Slack Activity*")))
+      (let ((activity-win (get-buffer-window "*Slack Inbox*")))
         (if activity-win
             (select-window activity-win)
           (taut-setup-strict-windows)
-          (setq activity-win (get-buffer-window "*Slack Activity*"))
+          (setq activity-win (get-buffer-window "*Slack Inbox*"))
           (when activity-win
             (select-window activity-win)))
-        (get-buffer "*Slack Activity*"))
+        (get-buffer "*Slack Inbox*"))
     (taut-ensure-consolidated-workspace)
-    (let ((buf (get-buffer-create "*Slack Activity*"))
+    (let ((buf (get-buffer-create "*Slack Inbox*"))
           (sidebar-win (get-buffer-window "*Taut Sidebar*")))
       (with-current-buffer buf
         (unless (eq major-mode 'taut-inbox-mode)
@@ -752,7 +754,7 @@ Returns non-nil if the buffer was found and focused."
       buf)))
 
 (defun taut-inbox-bury ()
-  "Bury the Slack Activity buffer."
+  "Bury the Slack Inbox buffer."
   (interactive)
   (bury-buffer))
 

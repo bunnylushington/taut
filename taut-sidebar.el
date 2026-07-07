@@ -124,6 +124,7 @@
   (setq buffer-read-only t
         truncate-lines t
         cursor-type nil)
+  (setq-local header-line-format " 💬 TAUT")
   (hl-line-mode 1))
 
 ;;;; Rendering Engine
@@ -197,7 +198,8 @@
               (old-point (point)))
           (erase-buffer)
           (taut-sidebar--render-sections)
-          (goto-char (min old-point (point-max))))))))
+          (goto-char (min old-point (point-max)))
+          (force-mode-line-update t))))))
 
 (defun taut-sidebar--get-inbox-unread-count ()
   "Count total unread items in the activity feed."
@@ -239,34 +241,34 @@ found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-t
     (>= max-time limit)))
 
 (defun taut-sidebar--render-connection-status ()
-  "Render a beautiful connection status indicator at the top of the sidebar."
+  "Set a beautiful connection status indicator in the header-line of the sidebar."
   (let* ((connected (and (bound-and-true-p taut-socket-ws)
+                         (fboundp 'websocket-openp)
                          (websocket-openp taut-socket-ws)))
-         (status-face (if connected 'success 'font-lock-warning-face))
-         (status-text (if connected "Connected" "Disconnected"))
+         (status-face (if connected '(:foreground "#2eb67d" :weight bold) '(:foreground "#ecb22e" :weight bold)))
+         (status-text (if connected "Connected" "Offline"))
          (dot (if connected "●" "○"))
          (icon (or (and taut-use-icons (fboundp 'nerd-icons-octicon)
                         (condition-case nil
-                            (nerd-icons-octicon (if connected "nf-oct-primitive_dot" "nf-oct-primitive_dot")
-                                                :face status-face)
+                            (nerd-icons-octicon "nf-oct-primitive_dot" :face status-face)
                           (error nil)))
                    (and taut-use-icons (fboundp 'all-the-icons-octicon)
                         (condition-case nil
                             (all-the-icons-octicon "primitive-dot" :face status-face)
                           (error nil)))
                    (propertize dot 'face status-face))))
-    (insert "\n")
-    (let ((start (point)))
-      (insert "  " icon " " (propertize status-text 'face 'font-lock-comment-face))
-      (add-text-properties start (point)
-                           (list 'taut-sidebar-action #'taut-socket-status
-                                 'mouse-face 'highlight)))
-    (insert "\n\n")))
+    (setq-local header-line-format
+                (concat
+                 (propertize " 💬 TAUT" 'face '(:weight bold :foreground "#36c5f0"))
+                 (propertize "  |  " 'face 'font-lock-comment-face)
+                 (propertize icon 'display '(raise 0.22))
+                 (propertize (format " %s" status-text) 'face 'font-lock-comment-face)))))
 
 (defun taut-sidebar--render-sections ()
   "Render all sections to the current buffer."
   (taut-sidebar--render-connection-status)
-  ;; Render the Slack Activity shortcut with unread badge at the top
+  (insert "\n")
+  ;; Render the Slack Inbox shortcut with unread badge at the top
   (let* ((inbox-unread-count (taut-sidebar--get-inbox-unread-count))
          (has-unreads (> inbox-unread-count 0))
          (face (if has-unreads 'taut-sidebar-channel-unread 'taut-sidebar-channel))
@@ -276,7 +278,7 @@ found in `taut-threads`, is within 14 days of CURRENT-TIME (defaults to `float-t
                         (concat (all-the-icons-octicon "inbox" :face face) " "))
                    "📥 ")))
     (let ((start (point)))
-      (insert "  " icon (propertize "Slack Activity" 'face face))
+      (insert "  " icon (propertize "Slack Inbox" 'face face))
       (when has-unreads
         (insert (propertize (format " (%d)" inbox-unread-count)
                             'face 'taut-sidebar-badge-unread)))

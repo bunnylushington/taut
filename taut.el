@@ -248,7 +248,7 @@ If the frame is in portrait orientation, stacks them vertically in three rows."
   (interactive)
   (taut-ensure-consolidated-workspace)
   (let* ((sidebar-buf (get-buffer-create "*Taut Sidebar*"))
-         (activity-buf (get-buffer-create "*Slack Activity*")))
+         (activity-buf (get-buffer-create "*Slack Inbox*")))
     (with-current-buffer sidebar-buf
       (unless (eq major-mode 'taut-sidebar-mode)
         (taut-sidebar-mode)))
@@ -262,7 +262,7 @@ If the frame is in portrait orientation, stacks them vertically in three rows."
     (let ((window-min-width 1)
           (window-min-height 1))
       (let* ((chat-buf (cl-find-if (lambda (b)
-                                    (and (not (equal (buffer-name b) "*Slack Activity*"))
+                                    (and (not (equal (buffer-name b) "*Slack Inbox*"))
                                          (not (equal (buffer-name b) "*Taut Sidebar*"))
                                          (or (eq (buffer-local-value 'major-mode b) 'taut-message-mode)
                                              (eq (buffer-local-value 'major-mode b) 'taut-thread-mode))))
@@ -366,7 +366,7 @@ If the frame is in portrait orientation, stacks them vertically in three rows."
 (defun taut-get-chat-window ()
   "Return the non-dedicated window in the current frame, creating one if necessary."
   (let ((sidebar-win (get-buffer-window "*Taut Sidebar*"))
-        (activity-win (get-buffer-window "*Slack Activity*"))
+        (activity-win (get-buffer-window "*Slack Inbox*"))
         (chat-win nil))
     (dolist (win (window-list))
       (unless (window-dedicated-p win)

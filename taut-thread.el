@@ -126,10 +126,10 @@ replies from API first."
             (chan (taut-api-get-or-fetch-channel root-chan-id)))
         
         ;; Set buffer-local header-line-format for an anchored premium header
-        (setq header-line-format
-              (concat
-               (propertize " 💬 THREAD DISCUSSION" 'face '(:weight bold :foreground "#e01e5a"))
-               (propertize (format "  |  in #%s" (if chan (or (taut-channel-name chan) "unknown") "unknown")) 'face 'font-lock-comment-face)))
+        (setq-local header-line-format
+                    (concat
+                     (propertize " 💬 THREAD DISCUSSION" 'face '(:weight bold :foreground "#e01e5a"))
+                     (propertize (format "  |  in #%s" (if chan (or (taut-channel-name chan) "unknown") "unknown")) 'face 'font-lock-comment-face)))
 
         (insert "\n")
 
@@ -145,7 +145,8 @@ replies from API first."
         (if (null replies)
             (insert "  No replies in this thread yet. Write a reply with `r`!\n")
           (dolist (reply replies)
-            (taut-message--render-message-line reply)))))))
+            (taut-message--render-message-line reply)))
+        (force-mode-line-update t)))))
 
 ;;;; Actions & Window Layout Management
 
@@ -223,7 +224,7 @@ using local cache fallback strategies."
         (if (and (boundp 'taut-strict-windows) taut-strict-windows)
             ;; In strict-windows mode, find the last conversation buffer or scratch and show it
             (let ((prev-buf (cl-find-if (lambda (b)
-                                          (and (not (equal (buffer-name b) "*Slack Activity*"))
+                                          (and (not (equal (buffer-name b) "*Slack Inbox*"))
                                                (not (equal (buffer-name b) "*Taut Sidebar*"))
                                                (not (equal (buffer-name b) "*Taut Thread*"))
                                                (eq (buffer-local-value 'major-mode b) 'taut-message-mode)))

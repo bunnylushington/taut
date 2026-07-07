@@ -18,12 +18,14 @@
 
 ;;;; Customization and Variables
 
-(defconst taut-workspace-name "🌑 Taut"
-  "The name of the Taut workspace tab or frame.")
-
 (defgroup taut nil
   "An elegant Slack client for Emacs."
   :group 'applications)
+
+(defcustom taut-workspace-name "🌑 Taut"
+  "The name of the Taut workspace tab or frame."
+  :type 'string
+  :group 'taut)
 
 (defcustom taut-consolidate-windows nil
   "Whether and how to consolidate Taut windows into a single tab or frame.
@@ -69,28 +71,40 @@ DMs, or threads always open in the dedicated Chat/Thread window."
    (t nil)))
 
 (defun taut--tab-exists-p (name)
-  "Return t if a tab named NAME exists in the current frame."
+  "Return t if a tab named NAME (or starting with NAME) exists in the current frame."
   (and (fboundp 'tab-bar-tabs)
        (cl-some (lambda (tab)
-                  (equal (cdr (assq 'name (cdr tab))) name))
+                  (let ((tname (cdr (assq 'name (cdr tab)))))
+                    (and tname
+                         (or (equal tname name)
+                             (and (string-prefix-p "🌑 Taut" name)
+                                  (string-prefix-p "🌑 Taut" tname))))))
                 (tab-bar-tabs))))
 
 (defun taut-ensure-tab ()
-  "Ensure a tab named `taut-workspace-name' exists and is selected in the current frame."
+  "Ensure a Taut tab exists and is selected in the current frame."
   (unless noninteractive
     (require 'tab-bar)
     (unless tab-bar-mode
       (tab-bar-mode 1))
-    (if (taut--tab-exists-p taut-workspace-name)
-        (tab-bar-select-tab-by-name taut-workspace-name)
-      (tab-bar-new-tab)
-      (tab-bar-rename-tab taut-workspace-name))))
+    (let* ((tabs (tab-bar-tabs))
+           (found-name nil))
+      (dolist (tab tabs)
+        (let ((name (cdr (assq 'name (cdr tab)))))
+          (when (and name (string-prefix-p "🌑 Taut" name))
+            (setq found-name name))))
+      (if found-name
+          (tab-bar-select-tab-by-name found-name)
+        (tab-bar-new-tab)
+        (tab-bar-rename-tab taut-workspace-name)))))
 
 (defun taut-ensure-frame ()
-  "Ensure a frame named `taut-workspace-name' exists and is focused."
+  "Ensure a frame named `taut-workspace-name' (or starting with it) exists and is focused."
   (if noninteractive
       (selected-frame)
-    (let ((frame (cl-find-if (lambda (f) (equal (frame-parameter f 'name) taut-workspace-name))
+    (let ((frame (cl-find-if (lambda (f)
+                              (let ((name (frame-parameter f 'name)))
+                                (and name (string-prefix-p "🌑 Taut" name))))
                             (frame-list))))
       (if frame
           (select-frame-set-input-focus frame)
@@ -108,19 +122,113 @@ DMs, or threads always open in the dedicated Chat/Thread window."
       (taut-ensure-frame)))))
 
 (defun taut--close-tab-by-name (name)
-  "Close the tab named NAME in the current frame safely."
+  "Close the tab named NAME (or starting with NAME) in the current frame safely."
   (when (and (require 'tab-bar nil t)
              (fboundp 'tab-bar-tabs))
     (let ((index 1)
           found)
       (dolist (tab (tab-bar-tabs))
-        (if (equal (cdr (assq 'name (cdr tab))) name)
-            (setq found index)
-          (setq index (1+ index))))
+        (let ((tname (cdr (assq 'name (cdr tab)))))
+          (if (and tname
+                   (or (equal tname name)
+                       (and (string-prefix-p "🌑 Taut" name)
+                            (string-prefix-p "🌑 Taut" tname))))
+              (setq found index)
+            (setq index (1+ index)))))
       (when found
         (if (fboundp 'tab-bar-close-tab)
             (tab-bar-close-tab found)
           (tab-bar-close-tab-by-name name))))))
+
+(defun taut--get-today-unread-count ()
+  "Count unread messages from today in the activity feed."
+  (if (and (fboundp 'taut-model-get-activity-items)
+           (fboundp 'taut-inbox-item-is-read)
+           (fboundp 'taut-inbox-item-ts))
+      (let ((items (taut-model-get-activity-items))
+            (now-days (time-to-days (seconds-to-time (float-time))))
+            (count 0))
+        (dolist (item items)
+          (unless (taut-inbox-item-is-read item)
+            (let ((ts (taut-inbox-item-ts item)))
+              (when (and ts (string-match "^\\([0-9]+\\)" ts))
+                (let* ((epoch (string-to-number (match-string 1 ts)))
+                       (item-days (time-to-days (seconds-to-time epoch)))
+                       (day-diff (- now-days item-days)))
+                  (when (<= day-diff 0)
+                    (let ((item-count (and (fboundp 'taut-inbox-item-unread-count)
+                                           (taut-inbox-item-unread-count item))))
+                      (setq count (+ count (or item-count 1))))))))))
+        count)
+    0))
+
+(defun taut-tab-bar-update-title ()
+  "Dynamically update the tab-bar title with the number of today's unread messages."
+  (interactive)
+  (when (and (require 'tab-bar nil t)
+             (bound-and-true-p tab-bar-mode)
+             (fboundp 'tab-bar-tabs))
+    (let* ((unreads (taut--get-today-unread-count))
+           (new-name (if (> unreads 0)
+                         (format "%s (%d)" taut-workspace-name unreads)
+                       taut-workspace-name))
+           (tabs (tab-bar-tabs))
+           (index 1)
+           (target-index nil)
+           (current-name nil)
+           (current-tab-index nil)
+           (current-tab-name nil))
+      ;; Scan tabs to find a Taut tab or the current tab
+      (dolist (tab tabs)
+        (let ((name (cdr (assq 'name (cdr tab))))
+              (is-current (eq (car tab) 'current-tab)))
+          (when is-current
+            (setq current-tab-index index
+                  current-tab-name name))
+          (when (and name
+                     (or (string-prefix-p taut-workspace-name name)
+                         (string-prefix-p "🌑 Taut" name)
+                         (string-prefix-p "Taut" name)))
+            (setq target-index index
+                  current-name name)))
+        (setq index (1+ index)))
+      ;; If we didn't find an explicitly named Taut tab, but the current tab is displaying a Taut buffer,
+      ;; we target the current tab.
+      (unless target-index
+        (let ((current-buf (current-buffer)))
+          (when (and current-buf
+                     (string-prefix-p "taut-" (symbol-name (buffer-local-value 'major-mode current-buf))))
+            (setq target-index current-tab-index
+                  current-name current-tab-name))))
+      ;; Rename the tab if found and the name changed
+      (when (and target-index
+                 (not (equal current-name new-name)))
+        (tab-bar-rename-tab new-name target-index)))))
+
+(defun taut-frame-update-title ()
+  "Dynamically update the frame name with the number of today's unread messages."
+  (unless noninteractive
+    (let* ((unreads (taut--get-today-unread-count))
+           (new-name (if (> unreads 0)
+                         (format "%s (%d)" taut-workspace-name unreads)
+                       taut-workspace-name)))
+      (dolist (frame (frame-list))
+        (let ((name (frame-parameter frame 'name)))
+          (when (and name
+                     (or (string-prefix-p taut-workspace-name name)
+                         (string-prefix-p "🌑 Taut" name)
+                         (string-prefix-p "Taut" name)))
+            (unless (equal name new-name)
+              (modify-frame-parameters frame `((name . ,new-name))))))))))
+
+(defun taut-update-workspace-title ()
+  "Update workspace title (tab name or frame name) with today's unread count."
+  (interactive)
+  (unless noninteractive
+    (taut-tab-bar-update-title)
+    (taut-frame-update-title)))
+
+(add-hook 'taut-model-updated-hook #'taut-update-workspace-title)
 
 (defgroup taut-faces nil
   "Faces used by the Taut Slack client."

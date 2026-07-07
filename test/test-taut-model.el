@@ -196,7 +196,7 @@
   "Test that `taut-quit` runs cleanly, kills all Taut buffers, and cleans up."
   (let ((buf1 (get-buffer-create "*Taut - #general-test*"))
         (buf2 (get-buffer-create "*Taut Sidebar*"))
-        (buf3 (get-buffer-create "*Slack Activity*")))
+        (buf3 (get-buffer-create "*Slack Inbox*")))
     (with-current-buffer buf1
       (taut-message-mode))
     (with-current-buffer buf2
@@ -207,7 +207,7 @@
     ;; Verify the buffers exist
     (should (get-buffer "*Taut - #general-test*"))
     (should (get-buffer "*Taut Sidebar*"))
-    (should (get-buffer "*Slack Activity*"))
+    (should (get-buffer "*Slack Inbox*"))
     
     ;; Call taut-quit
     (taut-quit)
@@ -215,7 +215,7 @@
     ;; Verify buffers are killed
     (should-not (get-buffer "*Taut - #general-test*"))
     (should-not (get-buffer "*Taut Sidebar*"))
-    (should-not (get-buffer "*Slack Activity*"))))
+    (should-not (get-buffer "*Slack Inbox*"))))
 
 (ert-deftest taut-strict-windows-test ()
   "Test the strict-windows layout manager and buffer assignment."
@@ -225,7 +225,7 @@
         (taut-activity-width 15))
     ;; Clean up any existing buffers so we start fresh
     (ignore-errors (kill-buffer "*Taut Sidebar*"))
-    (ignore-errors (kill-buffer "*Slack Activity*"))
+    (ignore-errors (kill-buffer "*Slack Inbox*"))
     (ignore-errors (kill-buffer "*Taut Thread*"))
     (ignore-errors (kill-buffer "*Taut - #general*"))
     
@@ -240,7 +240,7 @@
     
     ;; Verify windows have the correct buffers and dedication
     (let ((sidebar-win (get-buffer-window "*Taut Sidebar*"))
-          (activity-win (get-buffer-window "*Slack Activity*"))
+          (activity-win (get-buffer-window "*Slack Inbox*"))
           (chat-win (taut-get-chat-window)))
       (should sidebar-win)
       (should activity-win)
@@ -281,7 +281,7 @@
         (taut-consolidate-windows nil))
     ;; Clean up any existing buffers so we start fresh
     (ignore-errors (kill-buffer "*Taut Sidebar*"))
-    (ignore-errors (kill-buffer "*Slack Activity*"))
+    (ignore-errors (kill-buffer "*Slack Inbox*"))
     (ignore-errors (kill-buffer "*Taut Thread*"))
     (ignore-errors (kill-buffer "*Taut - #C_GEN*"))
     
@@ -295,7 +295,7 @@
       
       ;; Verify windows have the correct buffers and dedication in portrait mode
       (let ((sidebar-win (get-buffer-window "*Taut Sidebar*"))
-            (activity-win (get-buffer-window "*Slack Activity*"))
+            (activity-win (get-buffer-window "*Slack Inbox*"))
             (chat-win (taut-get-chat-window)))
         (should sidebar-win)
         (should activity-win)

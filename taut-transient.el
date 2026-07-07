@@ -86,7 +86,7 @@
     ("Z" "Connect to Slack"    taut-connect)
     ("U" "Direct Message (User)" taut-dm-open)
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
-    ("I" "Show/Focus Slack Activity" taut-inbox-show)
+    ("I" "Show/Focus Slack Inbox" taut-inbox-show)
     ("W" "Reset Layout"        taut-reset-layout)
     ("F" "Search / Find"       taut-search-quick)
     ("P" "Advanced Search"     taut-search-advanced)
@@ -99,7 +99,7 @@
     ("M"   "Mark Channel Read"  taut-sidebar-mark-all-read)
     ("h"   "Toggle Hidden"      taut-sidebar-toggle-channel-hidden)]
    
-   ["Slack Activity (Inbox) Actions"
+   ["Slack Inbox Actions"
     :if (lambda () (eq major-mode 'taut-inbox-mode))
     ("RET" "Open Channel/Thread" taut-inbox-activate)
     ("d"   "Mark Read / Archive" taut-inbox-mark-read)
@@ -107,7 +107,7 @@
     ("M"   "Mark Channel Read"   taut-inbox-mark-channel-read)
     ("g"   "Refresh Inbox"       taut-inbox-refresh)]
    
-   ["Slack Activity Filters"
+   ["Slack Inbox Filters"
     :if (lambda () (eq major-mode 'taut-inbox-mode))
     ("a"   "Show All"            taut-inbox-filter-all)
     ("u"   "Show Unreads Only"   taut-inbox-filter-unreads)
@@ -115,7 +115,7 @@
     ("m"   "Show Mentions Only"  taut-inbox-filter-mentions)
     ("t"   "Show Threads Only"   taut-inbox-filter-threads)]
 
-   ["Slack Activity Date Filters"
+   ["Slack Inbox Date Filters"
     :if (lambda () (eq major-mode 'taut-inbox-mode))
     ("1"   "Filter Today"        taut-inbox-date-filter-today)
     ("2"   "Filter Last 7 Days"  taut-inbox-date-filter-last-7)
