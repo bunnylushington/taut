@@ -228,7 +228,79 @@
     ;; Toggle line numbers OFF again
     (taut-code-block-toggle-line-numbers)
     (should-not (get-text-property (point) 'taut-code-block-show-line-numbers))
-    (should-not (string-match-p "1 │" (buffer-string)))))
+    (should-not (string-match-p "1 │" (buffer-string))))
+
+  ;; Test dynamic inline expansion of truncated blocks when toggled ON
+  (with-temp-buffer
+    (let ((taut-code-block-max-lines 5))
+      ;; Insert 8 lines of code
+      (taut-message--insert-formatted-text "```python
+line1
+line2
+line3
+line4
+line5
+line6
+line7
+line8
+```")
+      (goto-char (point-min))
+      ;; Truncation limit is 5, so there should be 3 lines hidden
+      (should (string-match-p "\\.\\.\\. (\\+3 lines hidden" (buffer-string)))
+      (should-not (string-match-p "line8" (buffer-string)))
+      
+      ;; Toggle line numbers ON -> should fully expand inline showing all lines
+      (taut-code-block-toggle-line-numbers)
+      (should (string-match-p "line8" (buffer-string)))
+      (should-not (string-match-p "lines hidden" (buffer-string)))
+      
+      ;; Toggle line numbers OFF -> should truncate again
+      (taut-code-block-toggle-line-numbers)
+      (should (string-match-p "\\.\\.\\. (\\+3 lines hidden" (buffer-string)))
+      (should-not (string-match-p "line8" (buffer-string))))))
+
+(ert-deftest taut-code-block-local-edits-and-lang-assignment-test ()
+  "Test that local edits and language assignments persist across model updates."
+  (taut-model-clear-all)
+  (let* ((msg-ts "1688500000.12345")
+         (orig-text "Check this unlabeled code:\n```\n(defun hello ())\n```")
+         (msg (make-taut-message :ts msg-ts :text orig-text :channel-id "C1" :user-id "U_OTHER")))
+    ;; Add original message
+    (taut-model-add-message msg)
+    
+    ;; Verify message was added with original text
+    (should (string= (taut-message-text msg) orig-text))
+    
+    ;; 1. Test assigning a language to the code block
+    (with-temp-buffer
+      (insert orig-text)
+      ;; Simulate the properties that would be at point in the message buffer
+      (goto-char (point-min))
+      (search-forward "(defun hello")
+      (let ((inhibit-read-only t))
+        (add-text-properties (match-beginning 0) (match-end 0)
+                             (list 'taut-code-block-content "(defun hello ())\n"
+                                   'taut-code-block-lang "text"
+                                   'taut-message-ts msg-ts)))
+      
+      ;; Call language assignment
+      (goto-char (match-beginning 0))
+      (taut-code-block-set-language "elisp")
+      
+      ;; Verify memory map contains the override
+      (let ((override-text (gethash msg-ts taut-local-edits)))
+        (should (string-match-p "```elisp" override-text))
+        (should (string-match-p "(defun hello ())\n" override-text)))
+      
+      ;; Verify the active message has been updated
+      (should (string-match-p "```elisp" (taut-message-text msg)))
+      
+      ;; Clear state and simulate fetching from API (overwriting memory models)
+      (let ((new-msg (make-taut-message :ts msg-ts :text orig-text :channel-id "C1" :user-id "U_OTHER")))
+        ;; Adding the message with original Slack text should automatically apply our local edits override!
+        (taut-model-add-message new-msg)
+        (should (string-match-p "```elisp" (taut-message-text new-msg)))
+        (should-not (string-match-p "```\n(defun hello" (taut-message-text new-msg)))))))
 
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here

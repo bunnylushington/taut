@@ -17,11 +17,21 @@
 (ert-deftest taut-inbox-get-icon-badge-test ()
   "Test `taut-inbox--get-icon-badge` formatting."
   (let ((taut-use-icons nil))
-    (should (string-match-p "👤 DM" (taut-inbox--get-icon-badge 'dm)))
-    (should (string-match-p "@ MENTION" (taut-inbox--get-icon-badge 'mention)))
-    (should (string-match-p "💬 THREAD" (taut-inbox--get-icon-badge 'thread-update)))
+    (should (string-match-p "✉ DM" (taut-inbox--get-icon-badge 'dm)))
+    (should (string-match-p "🔔 MENTION" (taut-inbox--get-icon-badge 'mention)))
+    (should (string-match-p "🧵 CH-THREAD" (taut-inbox--get-icon-badge 'thread-update)))
     (should (string-match-p "♯ CHANNEL" (taut-inbox--get-icon-badge 'channel)))
-    (should (string-match-p "💬 CHAT" (taut-inbox--get-icon-badge 'other)))))
+    (should (string-match-p "💬 CHAT" (taut-inbox--get-icon-badge 'other)))
+
+    ;; Test with item and channel mock for DM-THREAD and CH-THREAD
+    (taut-model-clear-all)
+    (taut-model-add-channel (make-taut-channel :id "C_DM" :type 'dm :name "alice"))
+    (taut-model-add-channel (make-taut-channel :id "C_PUB" :type 'public :name "general"))
+    
+    (let ((dm-item (make-taut-inbox-item :channel-id "C_DM"))
+          (pub-item (make-taut-inbox-item :channel-id "C_PUB")))
+      (should (string-match-p "🧵 DM-THREAD" (taut-inbox--get-icon-badge 'thread-update dm-item)))
+      (should (string-match-p "🧵 CH-THREAD" (taut-inbox--get-icon-badge 'thread-update pub-item))))))
 
 (ert-deftest taut-inbox-format-date-test ()
   "Test relative date formatting and grouping in `taut-inbox`."
@@ -30,21 +40,21 @@
     (let* ((ts-today "1688499000.0000")
            (rel (taut-inbox--format-relative-date ts-today))
            (grp (taut-inbox--format-date-group ts-today)))
-      (should (string-match-p "^Today " rel))
+      (should (string-match-p "^[0-9]\\{2\\}:[0-9]\\{2\\}$" rel))
       (should (equal grp "Today")))
     
     ;; 2. Yesterday (diff = 100000)
     (let* ((ts-yesterday "1688400000.0000")
            (rel (taut-inbox--format-relative-date ts-yesterday))
            (grp (taut-inbox--format-date-group ts-yesterday)))
-      (should (string-match-p "^Yesterday " rel))
+      (should (string-match-p "^[0-9]\\{2\\}:[0-9]\\{2\\}$" rel))
       (should (equal grp "Yesterday")))
 
     ;; 3. Weekday (diff = 300000)
     (let* ((ts-weekday "1688200000.0000")
            (rel (taut-inbox--format-relative-date ts-weekday))
            (grp (taut-inbox--format-date-group ts-weekday)))
-      (should (string-match-p "^[A-Za-z]+ " rel))
+      (should (string-match-p "^[0-9]\\{2\\}:[0-9]\\{2\\}$" rel))
       (should (string-match-p "^[A-Za-z]+$" grp)))
 
     ;; 4. Nil or invalid
@@ -140,6 +150,39 @@
         (should (taut-inbox--item-matches-date-filter-p item-8-days-ago))
         (should (taut-inbox--item-matches-date-filter-p item-29-days-ago))
         (should (taut-inbox--item-matches-date-filter-p item-35-days-ago))))))
+
+(ert-deftest taut-inbox-code-filtering-test ()
+  "Test that the code filter accurately isolates items with code blocks."
+  (taut-model-clear-all)
+  (let* ((item-no-code (make-taut-inbox-item :id "msg-1" :snippet "Hello, how are you?"))
+         (item-with-code-snippet (make-taut-inbox-item :id "msg-2" :snippet "Here is the code:\n```elisp\n(defun foo ())\n```"))
+         (item-with-code-model (make-taut-inbox-item :id "msg-3" :snippet "See below"))
+         ;; Also create a message object in the model for msg-3
+         (msg-3 (make-taut-message :ts "msg-3" :text "Here is code in the text:\n```python\nprint(123)\n```")))
+    
+    (taut-model-add-message msg-3)
+    
+    ;; Test predicate directly
+    (should-not (taut-inbox-item-has-code-p item-no-code))
+    (should (taut-inbox-item-has-code-p item-with-code-snippet))
+    (should (taut-inbox-item-has-code-p item-with-code-model))
+    
+    ;; Test the commands and rendering filtering flow
+    (with-temp-buffer
+      (let ((inhibit-read-only t)
+            (taut-inbox-filter 'code))
+        ;; Mock model retrieval to return our test list
+        (cl-letf (((symbol-function 'taut-model-get-activity-items)
+                   (lambda () (list item-no-code item-with-code-snippet item-with-code-model)))
+                  ((symbol-function 'taut-inbox--item-matches-date-filter-p)
+                   (lambda (_) t)))
+          (taut-inbox--render-feed)
+          (let ((content (buffer-string)))
+            ;; Should render items with code blocks
+            (should (string-match-p "Here is the code" content))
+            (should (string-match-p "See below" content))
+            ;; Should NOT render item without code blocks
+            (should-not (string-match-p "Hello, how are you" content))))))))
 
 (ert-deftest taut-inbox-navigation-helpers-test ()
   "Test helpers like `taut-inbox--find-item-point`, `taut-inbox--move-to-next-item`, and `taut-inbox--move-to-prev-item`."

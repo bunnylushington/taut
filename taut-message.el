@@ -163,6 +163,11 @@
   :type '(repeat (cons (string :tag "Language Specifier")
                        (symbol :tag "Major Mode Base Symbol")))
   :group 'taut)
+ 
+(defcustom taut-code-block-max-lines 10
+  "Maximum number of lines to display in a code block before truncating."
+  :type 'integer
+  :group 'taut)
 
 (defun taut-message--valid-lang-p (str)
   "Return t if STR is a valid programming language identifier."
@@ -182,9 +187,11 @@
 (define-key taut-code-block-map (kbd "n") #'taut-code-block-toggle-line-numbers)
 (define-key taut-code-block-map (kbd "e") #'taut-code-block-evaluate)
 (define-key taut-code-block-map (kbd "E") #'taut-code-block-edit)
+(define-key taut-code-block-map (kbd "l") #'taut-code-block-set-language)
 (define-key taut-code-block-map (kbd "C-c C-y") #'taut-code-block-copy)
 (define-key taut-code-block-map (kbd "C-c C-v") #'taut-code-block-view)
 (define-key taut-code-block-map (kbd "C-c C-s") #'taut-code-block-save)
+(define-key taut-code-block-map (kbd "C-c C-l") #'taut-code-block-set-language)
 (define-key taut-code-block-map (kbd "?") #'taut-code-block-dispatch)
 
 ;;;###autoload
@@ -199,14 +206,122 @@
       (message "No code block found at point."))))
 
 ;;;###autoload
-(defun taut-code-block-view ()
-  "Pop open a temporary buffer with the code in its native major-mode."
+(defun taut-code-block-scratch-save ()
+  "Commit/save the current scratchpad buffer content back to the origin chat message."
   (interactive)
+  (let ((new-content (buffer-substring-no-properties (point-min) (point-max)))
+        (origin-buf taut-scratch-origin-buffer)
+        (ts taut-scratch-message-ts)
+        (orig-content taut-scratch-original-content))
+    (cond
+     ((or (null origin-buf) (null ts))
+      (user-error "Scratchpad context is missing. Cannot save back to chat."))
+     ((string= new-content orig-content)
+      (message "No changes to save."))
+     (t
+      (let ((msg (taut-model-get-message-by-ts ts)))
+        (if (not msg)
+            (user-error "Could not find the original message to update.")
+          (let* ((old-text (taut-message-text msg))
+                 ;; Find first exact match of original content to replace
+                 (new-text (if (string-match (regexp-quote orig-content) old-text)
+                               (replace-match new-content t t old-text)
+                             ;; Fallback if exact matching fails, replace whole text
+                             new-content)))
+            (setf (taut-message-text msg) new-text)
+            ;; Save to SQLite cache if available
+            (when (fboundp 'taut-cache-save-message)
+              (taut-cache-save-message msg))
+            ;; Save to local edits override tables
+            (setf (gethash ts taut-local-edits) new-text)
+            (when (fboundp 'taut-cache-save-local-edit)
+              (taut-cache-save-local-edit ts new-text))
+            ;; If it's our own message, update on Slack
+            (when (equal (taut-message-user-id msg) taut-current-user-id)
+              (taut-api-update-message (taut-message-channel-id msg) ts new-text))
+            ;; Update original content local variable to prevent duplicate updates
+            (setq-local taut-scratch-original-content new-content)
+            ;; Refresh the origin buffer
+            (with-current-buffer origin-buf
+              (if (eq major-mode 'taut-thread-mode)
+                  (taut-thread-refresh)
+                (taut-message-refresh)))
+            (message "Code block saved back to chat!"))))))))
+
+;;;###autoload
+(defun taut-code-block-set-language (new-lang)
+  "Assign/change the language of the code block under point to NEW-LANG.
+This modification is saved locally and persists across sessions."
+  (interactive
+   (list (completing-read "Assign language: "
+                          (mapcar #'car taut-code-block-language-alist)
+                          nil t)))
   (let ((code (get-text-property (point) 'taut-code-block-content))
-        (lang (get-text-property (point) 'taut-code-block-lang)))
+        (old-lang (get-text-property (point) 'taut-code-block-lang))
+        (ts (get-text-property (point) 'taut-message-ts))
+        (origin-buf (current-buffer)))
     (if (not code)
         (message "No code block found at point.")
-      (let* ((buf-name (format "*Taut Code - %s*" (if (string-blank-p (or lang "")) "text" lang)))
+      (let ((msg (taut-model-get-message-by-ts ts)))
+        (if (not msg)
+            (user-error "Could not find the original message to update.")
+          (let* ((old-text (taut-message-text msg))
+                 ;; Find the code block within the text.
+                 (old-lang-pattern (if (or (null old-lang) (string= old-lang "text") (string-blank-p old-lang))
+                                       ""
+                                     (regexp-quote old-lang)))
+                 (search-regex (concat "```" old-lang-pattern "\r?\n"
+                                       (regexp-quote code)
+                                       "\r?\n[ \t\r]*```"))
+                 (replacement (concat "```" new-lang "\n"
+                                      code
+                                      "\n```"))
+                 (new-text (if (string-match search-regex old-text)
+                               (replace-match replacement t t old-text)
+                             ;; Fallback: if exact match fails, look for the code itself
+                             (if (string-match (regexp-quote code) old-text)
+                                 (let* ((code-match-start (match-beginning 0))
+                                        (pre-text (substring old-text 0 code-match-start))
+                                        (post-text (substring old-text (match-end 0))))
+                                   (if (string-match "```[^\n]*\r?\n\\'" pre-text)
+                                       (concat (replace-match (concat "```" new-lang "\n") t t pre-text)
+                                               code
+                                               post-text)
+                                     old-text))
+                               old-text))))
+            (if (string= new-text old-text)
+                (message "Could not modify the code block in message text.")
+              (setf (taut-message-text msg) new-text)
+              ;; Save to SQLite message cache
+              (when (fboundp 'taut-cache-save-message)
+                (taut-cache-save-message msg))
+              ;; Save to local edits cache
+              (setf (gethash ts taut-local-edits) new-text)
+              (when (fboundp 'taut-cache-save-local-edit)
+                (taut-cache-save-local-edit ts new-text))
+              ;; If it's our own message, update on Slack
+              (when (equal (taut-message-user-id msg) taut-current-user-id)
+                (taut-api-update-message (taut-message-channel-id msg) ts new-text))
+              ;; Refresh the buffer
+              (with-current-buffer origin-buf
+                (if (eq major-mode 'taut-thread-mode)
+                    (taut-thread-refresh)
+                  (taut-message-refresh)))
+              (message "Code block language set to '%s'!" new-lang))))))))
+
+;;;###autoload
+(defun taut-code-block-view ()
+  "Pop open a temporary buffer with the code in its native major-mode.
+Edits made in this buffer can be committed back to the chat using \\[taut-code-block-scratch-save] (C-c C-c)."
+  (interactive)
+  (let ((code (get-text-property (point) 'taut-code-block-content))
+        (lang (get-text-property (point) 'taut-code-block-lang))
+        (ts (get-text-property (point) 'taut-message-ts))
+        (prefix (get-text-property (point) 'wrap-prefix))
+        (origin-buf (current-buffer)))
+    (if (not code)
+        (message "No code block found at point.")
+      (let* ((buf-name (format "*Taut Scratch - %s*" (if (string-blank-p (or lang "")) "text" lang)))
              (buf (get-buffer-create buf-name))
              (mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
                             lang))
@@ -218,9 +333,19 @@
             (if (fboundp mode-sym)
                 (funcall mode-sym)
               (normal-mode)))
-          (setq-local header-line-format "📝 View Code Block  [q to close]"))
-        (pop-to-buffer buf)
-        (local-set-key (kbd "q") #'quit-window)))))
+          ;; Set buffer-local variables for saving back
+          (setq-local taut-scratch-origin-buffer origin-buf)
+          (setq-local taut-scratch-message-ts ts)
+          (setq-local taut-scratch-original-content code)
+          (setq-local taut-scratch-lang lang)
+          (setq-local taut-scratch-prefix prefix)
+          
+          (setq-local header-line-format "📝 Scratchpad Code Block  [C-c C-c to save back to chat, C-c C-k to abort]")
+          ;; Bind local keys
+          (local-set-key (kbd "C-c C-c") #'taut-code-block-scratch-save)
+          (local-set-key (kbd "C-c C-s") #'taut-code-block-scratch-save)
+          (local-set-key (kbd "C-c C-k") #'quit-window))
+        (pop-to-buffer buf)))))
 
 ;;;###autoload
 (defun taut-code-block-toggle-line-numbers ()
@@ -282,7 +407,7 @@
                   (let ((inhibit-read-only t))
                     (erase-buffer)
                     (special-mode)
-                    (local-set-key (kbd "q") #'quit-window)
+                    (local-set-key (kbd "q") nil)
                     (insert (format "=== Execution of %s block ===\n\n" (upcase lang)))))
                 (pop-to-buffer buf)
                 (let ((process-connection-type nil)) ; use pipe
@@ -291,27 +416,7 @@
                     (process-send-eof proc))))))))))))
 
 ;;;###autoload
-(defun taut-code-block-edit ()
-  "Open the code block under point in a writable, temporary buffer with its native major-mode."
-  (interactive)
-  (let ((code (get-text-property (point) 'taut-code-block-content))
-        (lang (get-text-property (point) 'taut-code-block-lang)))
-    (if (not code)
-        (message "No code block found at point.")
-      (let* ((buf-name (format "*Taut Scratch - %s*" (if (string-blank-p (or lang "")) "text" lang)))
-             (buf (get-buffer-create buf-name))
-             (mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
-                            lang))
-             (mode-sym (intern (format "%s-mode" mode-base))))
-        (with-current-buffer buf
-          (erase-buffer)
-          (insert code)
-          (if (fboundp mode-sym)
-              (funcall mode-sym)
-            (normal-mode))
-          (setq-local header-line-format "📝 Scratchpad Code Block  [q to close]"))
-        (pop-to-buffer buf)
-        (local-set-key (kbd "q") #'quit-window)))))
+(defalias 'taut-code-block-edit #'taut-code-block-view)
 
 ;;;###autoload
 (defun taut-code-block-save (filename)
@@ -1155,14 +1260,14 @@ Insert at point with premium faces and interactive links."
     
     ;; Render top border with language label
     (insert "\n" prefix "┌" border-line "\n")
-    (insert prefix "│  " (propertize (format "💻 CODE (%s) - [c:copy, v:view, s:save]" (if (string-blank-p lang) "text" (upcase lang))) 'face '(:weight bold :foreground "#8a8a8a")) "\n")
+    (insert prefix "│  " (propertize (format "💻 CODE (%s) - [? for options]" (if (string-blank-p lang) "text" (upcase lang))) 'face '(:weight bold :foreground "#8a8a8a")) "\n")
     (insert prefix "├" border-line "\n")
     
-    ;; Insert code content with prefix on each line, limited to 10 lines
+    ;; Insert code content with prefix on each line, limited by taut-code-block-max-lines
     (let* ((fontified-code (taut-message--fontify-string code lang))
            (lines (split-string fontified-code "\n"))
            (total-count (length lines))
-           (max-lines 10)
+           (max-lines (if show-line-numbers total-count taut-code-block-max-lines))
            (show-lines (if (> total-count max-lines)
                            (butlast lines (- total-count max-lines))
                          lines))

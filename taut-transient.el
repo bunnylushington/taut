@@ -67,6 +67,7 @@
 (declare-function taut-code-block-copy "taut-message")
 (declare-function taut-code-block-view "taut-message")
 (declare-function taut-code-block-save "taut-message")
+(declare-function taut-code-block-set-language "taut-message")
 
 (declare-function taut-compose-send "taut-compose")
 (declare-function taut-compose-abort "taut-compose")
@@ -159,12 +160,12 @@
   ["💻 Code Block Actions"
    ["Read & Edit"
     ("c" "Copy to Clipboard"      taut-code-block-copy)
-    ("v" "View Read-Only Buffer"  taut-code-block-view)
-    ("E" "Edit Scratchpad Buffer" taut-code-block-edit)
+    ("v" "Scratchpad/Edit Buffer"  taut-code-block-view)
     ("s" "Save Block to File"     taut-code-block-save)]
    ["Interactive & Display"
     ("n" "Toggle Line Numbers"    taut-code-block-toggle-line-numbers)
-    ("e" "Securely Evaluate Code" taut-code-block-evaluate)]])
+    ("e" "Securely Evaluate Code" taut-code-block-evaluate)
+    ("l" "Assign/Set Language"    taut-code-block-set-language)]])
 
 ;;;###autoload
 (transient-define-prefix taut-compose-dispatch ()

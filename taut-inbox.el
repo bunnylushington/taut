@@ -73,7 +73,14 @@
   '((((background dark))  :background "#22543d" :foreground "#9ae6b4" :weight bold :box (:line-width (2 . -1) :style flat-button))
     (((background light)) :background "#e8f5e9" :foreground "#1b5e20" :weight bold :box (:line-width (2 . -1) :style flat-button))
     (t                    :background "#e8f5e9" :foreground "#1b5e20" :weight bold :box (:line-width (2 . -1) :style flat-button)))
-  "Face for [Thread] labels."
+  "Face for [Channel-Thread] labels."
+  :group 'taut-faces)
+
+(defface taut-inbox-type-dm-thread
+  '((((background dark))  :background "#312e81" :foreground "#c7d2fe" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (((background light)) :background "#e0e7ff" :foreground "#4338ca" :weight bold :box (:line-width (2 . -1) :style flat-button))
+    (t                    :background "#e0e7ff" :foreground "#4338ca" :weight bold :box (:line-width (2 . -1) :style flat-button)))
+  "Face for [DM-Thread] labels."
   :group 'taut-faces)
 
 (defface taut-inbox-type-channel
@@ -108,7 +115,7 @@
 
 (defvar-local taut-inbox-filter 'all
   "The current active filter in Slack Activity.
-Can be \\='all, \\='unreads, \\='dms, \\='mentions, or \\='threads.")
+Can be \\='all, \\='unreads, \\='dms, \\='mentions, \\='threads, or \\='code.")
 
 (defvar-local taut-inbox-date-filter 'last-7
   "The current active date filter in Slack Activity.
@@ -129,6 +136,7 @@ Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
 (define-key taut-inbox-mode-map (kbd "D") #'taut-inbox-filter-dms)
 (define-key taut-inbox-mode-map (kbd "m") #'taut-inbox-filter-mentions)
 (define-key taut-inbox-mode-map (kbd "t") #'taut-inbox-filter-threads)
+(define-key taut-inbox-mode-map (kbd "c") #'taut-inbox-filter-code)
 (define-key taut-inbox-mode-map (kbd "1") #'taut-inbox-date-filter-today)
 (define-key taut-inbox-mode-map (kbd "2") #'taut-inbox-date-filter-last-7)
 (define-key taut-inbox-mode-map (kbd "3") #'taut-inbox-date-filter-last-30)
@@ -205,12 +213,14 @@ Returns nil if not found."
         (unreads-face (if (eq taut-inbox-filter 'unreads) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
         (dms-face (if (eq taut-inbox-filter 'dms) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
         (mentions-face (if (eq taut-inbox-filter 'mentions) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
-        (threads-face (if (eq taut-inbox-filter 'threads) 'taut-inbox-filter-active 'taut-inbox-filter-inactive)))
+        (threads-face (if (eq taut-inbox-filter 'threads) 'taut-inbox-filter-active 'taut-inbox-filter-inactive))
+        (code-face (if (eq taut-inbox-filter 'code) 'taut-inbox-filter-active 'taut-inbox-filter-inactive)))
     (insert (propertize "[a] All" 'face all-face 'help-echo "Show all activity") "  •  "
             (propertize "[u] Unreads" 'face unreads-face 'help-echo "Show unreads only") "  •  "
             (propertize "[D] DMs" 'face dms-face 'help-echo "Show direct messages only") "  •  "
             (propertize "[m] Mentions" 'face mentions-face 'help-echo "Show mentions only") "  •  "
-            (propertize "[t] Threads" 'face threads-face 'help-echo "Show thread updates only")))
+            (propertize "[t] Threads" 'face threads-face 'help-echo "Show thread updates only") "  •  "
+            (propertize "[c] Code" 'face code-face 'help-echo "Show messages with code blocks only")))
   (insert "\n")
 
   ;; Render date filters bar
@@ -253,6 +263,7 @@ Returns nil if not found."
                  ((eq taut-inbox-filter 'dms)      (eq type 'dm))
                  ((eq taut-inbox-filter 'mentions) (eq type 'mention))
                  ((eq taut-inbox-filter 'threads)  (eq type 'thread-update))
+                 ((eq taut-inbox-filter 'code)     (taut-inbox-item-has-code-p item))
                  (t t))
                 (taut-inbox--item-matches-date-filter-p item))))
            all-items))
@@ -273,50 +284,62 @@ Returns nil if not found."
               (insert "\n  " (propertize date-group 'face '(:weight bold :foreground "#36c5f0" :underline t)) "\n\n"))
             (taut-inbox--render-row item)))))))
 
-(defun taut-inbox--get-icon-badge (type)
+(defun taut-inbox--get-icon-badge (type &optional item)
   "Get a stylized icon badge for TYPE.
-Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
-  (if (and (boundp 'taut-use-icons) taut-use-icons (fboundp 'nerd-icons-octicon))
-      (cond
-       ((eq type 'dm)
-        (propertize (concat " " (nerd-icons-octicon "nf-oct-person" :face 'taut-inbox-type-dm) " DM ")
-                    'face 'taut-inbox-type-dm))
-       ((eq type 'mention)
-        (propertize (concat " " (nerd-icons-octicon "nf-oct-mention" :face 'taut-inbox-type-mention) " MENTION ")
-                    'face 'taut-inbox-type-mention))
-       ((eq type 'thread-update)
-        (propertize (concat " " (nerd-icons-octicon "nf-oct-comment_discussion" :face 'taut-inbox-type-thread) " THREAD ")
-                    'face 'taut-inbox-type-thread))
-       ((eq type 'channel)
-        (propertize (concat " " (nerd-icons-octicon "nf-oct-hash" :face 'taut-inbox-type-channel) " CHANNEL ")
-                    'face 'taut-inbox-type-channel))
-       (t
-        (propertize (concat " " (nerd-icons-octicon "nf-oct-comment" :face 'taut-inbox-type-channel) " CHAT ")
-                    'face 'taut-inbox-type-channel)))
-    (if (and (boundp 'taut-use-icons) taut-use-icons (fboundp 'all-the-icons-octicon))
+Supports DM, MENTION, THREAD-UPDATE (distinguishing channel vs DM threads), and CHANNEL types."
+  (let* ((chan-id (and item (taut-inbox-item-channel-id item)))
+         (chan (and chan-id (taut-api-get-or-fetch-channel chan-id)))
+         (is-dm-thread (and (eq type 'thread-update)
+                            chan
+                            (eq (taut-channel-type chan) 'dm))))
+    (if (and (boundp 'taut-use-icons) taut-use-icons (fboundp 'nerd-icons-octicon))
         (cond
          ((eq type 'dm)
-          (propertize (concat " " (all-the-icons-octicon "person" :face 'taut-inbox-type-dm) " DM ")
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-mail" :face 'taut-inbox-type-dm) " DM ")
                       'face 'taut-inbox-type-dm))
          ((eq type 'mention)
-          (propertize (concat " " (all-the-icons-octicon "mention" :face 'taut-inbox-type-mention) " MENTION ")
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-bell" :face 'taut-inbox-type-mention) " MENTION ")
                       'face 'taut-inbox-type-mention))
+         (is-dm-thread
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-git_branch" :face 'taut-inbox-type-dm-thread) " DM-THREAD ")
+                      'face 'taut-inbox-type-dm-thread))
          ((eq type 'thread-update)
-          (propertize (concat " " (all-the-icons-octicon "comment-discussion" :face 'taut-inbox-type-thread) " THREAD ")
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-git_branch" :face 'taut-inbox-type-thread) " CH-THREAD ")
                       'face 'taut-inbox-type-thread))
          ((eq type 'channel)
-          (propertize (concat " " (all-the-icons-octicon "tag" :face 'taut-inbox-type-channel) " CHANNEL ")
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-hash" :face 'taut-inbox-type-channel) " CHANNEL ")
                       'face 'taut-inbox-type-channel))
          (t
-          (propertize (concat " " (all-the-icons-octicon "comment" :face 'taut-inbox-type-channel) " CHAT ")
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-comment" :face 'taut-inbox-type-channel) " CHAT ")
                       'face 'taut-inbox-type-channel)))
-      ;; Unicode fallback symbols
-      (cond
-       ((eq type 'dm)             (propertize " 👤 DM " 'face 'taut-inbox-type-dm))
-       ((eq type 'mention)        (propertize " @ MENTION " 'face 'taut-inbox-type-mention))
-       ((eq type 'thread-update)  (propertize " 💬 THREAD " 'face 'taut-inbox-type-thread))
-       ((eq type 'channel)        (propertize " ♯ CHANNEL " 'face 'taut-inbox-type-channel))
-       (t                         (propertize " 💬 CHAT " 'face 'taut-inbox-type-channel))))))
+      (if (and (boundp 'taut-use-icons) taut-use-icons (fboundp 'all-the-icons-octicon))
+          (cond
+           ((eq type 'dm)
+            (propertize (concat " " (all-the-icons-octicon "mail" :face 'taut-inbox-type-dm) " DM ")
+                        'face 'taut-inbox-type-dm))
+           ((eq type 'mention)
+            (propertize (concat " " (all-the-icons-octicon "bell" :face 'taut-inbox-type-mention) " MENTION ")
+                        'face 'taut-inbox-type-mention))
+           (is-dm-thread
+            (propertize (concat " " (all-the-icons-octicon "git-branch" :face 'taut-inbox-type-dm-thread) " DM-THREAD ")
+                        'face 'taut-inbox-type-dm-thread))
+           ((eq type 'thread-update)
+            (propertize (concat " " (all-the-icons-octicon "git-branch" :face 'taut-inbox-type-thread) " CH-THREAD ")
+                        'face 'taut-inbox-type-thread))
+           ((eq type 'channel)
+            (propertize (concat " " (all-the-icons-octicon "tag" :face 'taut-inbox-type-channel) " CHANNEL ")
+                        'face 'taut-inbox-type-channel))
+           (t
+            (propertize (concat " " (all-the-icons-octicon "comment" :face 'taut-inbox-type-channel) " CHAT ")
+                        'face 'taut-inbox-type-channel)))
+        ;; Unicode fallback symbols
+        (cond
+         ((eq type 'dm)             (propertize " ✉ DM " 'face 'taut-inbox-type-dm))
+         ((eq type 'mention)        (propertize " 🔔 MENTION " 'face 'taut-inbox-type-mention))
+         (is-dm-thread              (propertize " 🧵 DM-THREAD " 'face 'taut-inbox-type-dm-thread))
+         ((eq type 'thread-update)  (propertize " 🧵 CH-THREAD " 'face 'taut-inbox-type-thread))
+         ((eq type 'channel)        (propertize " ♯ CHANNEL " 'face 'taut-inbox-type-channel))
+         (t                         (propertize " 💬 CHAT " 'face 'taut-inbox-type-channel)))))))
 
 (defun taut-inbox--render-row (item)
   "Render a single inbox row for ITEM."
@@ -329,9 +352,9 @@ Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
                           (propertize "● " 'face 'taut-inbox-unread-star)))
          ;; Stylize Timestamp (Slack ts is epoch in seconds)
          (time-str (taut-inbox--format-relative-date (taut-inbox-item-ts item)))
-         (time-part (propertize (format "[%s]" time-str) 'face 'taut-inbox-time))
+         (time-part (propertize time-str 'face 'taut-inbox-time))
          ;; Stylize Source Type Badge
-         (badge-part (taut-inbox--get-icon-badge type))
+         (badge-part (taut-inbox--get-icon-badge type item))
          ;; Sender user name
          (sender (taut-model-get-user (taut-inbox-item-user-id item)))
          (sender-display (if sender
@@ -358,8 +381,8 @@ Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
          (snippet-part (concat snippet-prefix (propertize clean-text 'face 'taut-inbox-snippet))))
 
     ;; Construct row:
-    ;; •  [Today 14:35]  👤 DM  Greg Rhoades: definitely interested. slack in emacs is...
-    ;; •  [Thursday]  💬 THREAD  Tony Akens  in  #ip4g-product-dev : if y'all don't have access to gr...
+    ;; •  14:35  ✉ DM  Greg Rhoades: definitely interested. slack in emacs is...
+    ;; •  14:35  🧵 CH-THREAD  Tony Akens  in  #ip4g-product-dev : if y'all don't have access to gr...
     (insert "  " unread-marker " " time-part "  " badge-part "  " sender-part channel-part ": " snippet-part)
     
     ;; Apply text properties to the row (excluding newline) for clicks
@@ -392,29 +415,11 @@ Supports DM, MENTION, THREAD-UPDATE, and CHANNEL types."
         nil))))
 
 (defun taut-inbox--format-relative-date (ts-str)
-  "Format Slack timestamp TS-STR into a relative date string.
-Includes representations like Today, Yesterday, day of week, or date."
+  "Format Slack timestamp TS-STR into a short time representation (HH:MM)."
   (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
       (let* ((epoch (string-to-number (match-string 1 ts-str)))
-             (now (float-time))
-             (time-val (seconds-to-time epoch))
-             (now-val (seconds-to-time now))
-             (item-days (time-to-days time-val))
-             (now-days (time-to-days now-val))
-             (day-diff (- now-days item-days)))
-        (cond
-         ((<= day-diff 0)
-          (format-time-string "Today %H:%M" time-val))
-         ((= day-diff 1)
-          (format-time-string "Yesterday %H:%M" time-val))
-         ((< day-diff 7)
-          (format-time-string "%A %H:%M" time-val))
-         (t
-          (let ((item-year (format-time-string "%Y" time-val))
-                (current-year (format-time-string "%Y" now-val)))
-            (if (equal item-year current-year)
-                (format-time-string "%b %d" time-val)
-              (format-time-string "%b %d, %Y" time-val))))))
+             (time-val (seconds-to-time epoch)))
+        (format-time-string "%H:%M" time-val))
     "--:--"))
 
 (defun taut-inbox--format-date-group (ts-str)
@@ -647,6 +652,22 @@ Returns the item if found, nil otherwise."
   "Show only thread updates in the inbox."
   (interactive)
   (setq taut-inbox-filter 'threads)
+  (taut-inbox-refresh))
+
+(defun taut-inbox-item-has-code-p (item)
+  "Return t if ITEM contains a code block (triple backticks)."
+  (let* ((snippet (taut-inbox-item-snippet item))
+         (has-code-in-snippet (and snippet (string-match-p "```" snippet))))
+    (or has-code-in-snippet
+        (let ((msg (taut-model-get-message-by-ts (taut-inbox-item-id item))))
+          (and msg
+               (taut-message-text msg)
+               (string-match-p "```" (taut-message-text msg)))))))
+
+(defun taut-inbox-filter-code ()
+  "Show only items containing code blocks in the inbox."
+  (interactive)
+  (setq taut-inbox-filter 'code)
   (taut-inbox-refresh))
 
 (defun taut-inbox--focus-buffer (buf-or-name)

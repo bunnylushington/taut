@@ -88,6 +88,11 @@ Creates the necessary tables if they do not exist."
                       "CREATE TABLE IF NOT EXISTS watched_threads (
                          thread_ts TEXT PRIMARY KEY
                        )")
+      (sqlite-execute taut-cache--db
+                      "CREATE TABLE IF NOT EXISTS local_edits (
+                         ts TEXT PRIMARY KEY,
+                         text TEXT
+                       )")
       ;; Create indexes to optimize queries
       (sqlite-execute taut-cache--db
                       "CREATE INDEX IF NOT EXISTS idx_messages_chan ON messages (channel_id)")
@@ -151,7 +156,18 @@ Creates the necessary tables if they do not exist."
   "Delete message identified by TS from the SQLite database."
   (let ((db (taut-cache--get-db)))
     (when db
-      (sqlite-execute db "DELETE FROM messages WHERE ts = ?" (list ts)))))
+      (sqlite-execute db "DELETE FROM messages WHERE ts = ?" (list ts))
+      (ignore-errors
+        (sqlite-execute db "DELETE FROM local_edits WHERE ts = ?" (list ts))))))
+
+(defun taut-cache-save-local-edit (ts text)
+  "Save a local edit override (message text) to the SQLite cache."
+  (let ((db (taut-cache--get-db)))
+    (when db
+      (sqlite-execute db
+                      "INSERT OR REPLACE INTO local_edits (ts, text)
+                       VALUES (?, ?)"
+                      (list ts text)))))
 
 (defun taut-cache-save-watched-thread (thread-ts)
   "Save THREAD-TS to the SQLite watched threads database."
@@ -167,6 +183,14 @@ Creates the necessary tables if they do not exist."
       (message "Taut: Loading cached workspace state from SQLite...")
       (taut-model-clear-all)
       
+      ;; 0. Load local edits
+      (ignore-errors
+        (let ((edits (sqlite-select db "SELECT ts, text FROM local_edits")))
+          (dolist (row edits)
+            (let ((ts (car row))
+                  (text (cadr row)))
+              (setf (gethash ts taut-local-edits) text)))))
+
       ;; 1. Load users
       (let ((users (sqlite-select db "SELECT id, username, real_name, presence, is_me, custom_status FROM users")))
         (dolist (row users)
@@ -222,8 +246,8 @@ Creates the necessary tables if they do not exist."
           (let* ((id (nth 0 row))
                  (channel-id (nth 1 row))
                  (user-id (nth 2 row))
-                 (text (nth 3 row))
                  (ts (nth 4 row))
+                 (text (or (gethash ts taut-local-edits) (nth 3 row)))
                  (thread-ts (nth 5 row))
                  (reply-count (nth 6 row))
                  (reactions-json (nth 7 row))
@@ -285,6 +309,7 @@ Creates the necessary tables if they do not exist."
       (sqlite-execute db "DELETE FROM channels")
       (sqlite-execute db "DELETE FROM messages")
       (sqlite-execute db "DELETE FROM watched_threads")
+      (ignore-errors (sqlite-execute db "DELETE FROM local_edits"))
       (message "Taut: Cache cleared successfully."))))
 
 (defun taut-cache-search-messages (query &optional channel-id user-id)

@@ -202,6 +202,10 @@ DMs, or threads always open in the dedicated Chat/Thread window."
 (defvar taut-watched-threads nil
   "List of thread-ts strings that the user is watching/participated in.")
 
+(defvar taut-local-edits (make-hash-table :test 'equal)
+  "Hash table mapping message-ts (string) to locally edited message text (string).
+This enables local edits and language assignments to persist locally across refreshes and sessions.")
+
 ;;;; Hook Definitions
 
 (defvar taut-model-updated-hook nil
@@ -555,6 +559,11 @@ Preserves existing is-hidden state if already present."
          (msg-ts (taut-message-ts msg))
          (is-duplicate nil))
 
+    ;; Apply local text edits override if available
+    (let ((local-text (gethash msg-ts taut-local-edits)))
+      (when local-text
+        (setf (taut-message-text msg) local-text)))
+
     ;; Check if it's a thread reply or main channel message
     (if (and thread-ts (not (equal thread-ts msg-ts)))
         ;; Thread reply
@@ -655,6 +664,7 @@ Preserves existing is-hidden state if already present."
   (clrhash taut-channels)
   (clrhash taut-messages)
   (clrhash taut-threads)
+  (clrhash taut-local-edits)
   (setq taut-watched-threads nil)
   (taut-model-trigger-update))
 
