@@ -141,5 +141,50 @@
         (should (taut-inbox--item-matches-date-filter-p item-29-days-ago))
         (should (taut-inbox--item-matches-date-filter-p item-35-days-ago))))))
 
+(ert-deftest taut-inbox-navigation-helpers-test ()
+  "Test helpers like `taut-inbox--find-item-point`, `taut-inbox--move-to-next-item`, and `taut-inbox--move-to-prev-item`."
+  (with-temp-buffer
+    (let ((item1 (make-taut-inbox-item :id "item-1"))
+          (item2 (make-taut-inbox-item :id "item-2")))
+      ;; Render mock rows manually
+      (let ((start1 (point)))
+        (insert "  Row 1")
+        (add-text-properties start1 (point) (list 'taut-inbox-item item1))
+        (insert "\n"))
+      (insert "  Header non-item line\n")
+      (let ((start2 (point)))
+        (insert "  Row 2")
+        (add-text-properties start2 (point) (list 'taut-inbox-item item2))
+        (insert "\n"))
+      
+      ;; 1. Test find item point
+      (should (equal (taut-inbox--find-item-point "item-1") 1))
+      (should (integerp (taut-inbox--find-item-point "item-2")))
+      (should-not (taut-inbox--find-item-point "nonexistent"))
+      
+      ;; 2. Test move-to-next-item and move-to-prev-item
+      (goto-char (point-min))
+      ;; From line 1 (item 1), next item should be item 2 (skipping header)
+      (let ((next (taut-inbox--move-to-next-item)))
+        (should (equal (taut-inbox-item-id next) "item-2"))
+        (should (equal (get-text-property (point) 'taut-inbox-item) item2)))
+      
+      ;; Moving next from item 2 should return nil
+      (should-not (taut-inbox--move-to-next-item))
+      
+      ;; From end, move prev should return item 2
+      (goto-char (point-max))
+      (let ((prev (taut-inbox--move-to-prev-item)))
+        (should (equal (taut-inbox-item-id prev) "item-2"))
+        (should (equal (get-text-property (point) 'taut-inbox-item) item2)))
+      
+      ;; Move prev from item 2 should return item 1 (skipping the non-item header!)
+      (let ((prev (taut-inbox--move-to-prev-item)))
+        (should (equal (taut-inbox-item-id prev) "item-1"))
+        (should (equal (get-text-property (point) 'taut-inbox-item) item1)))
+      
+      ;; Move prev from item 1 should return nil
+      (should-not (taut-inbox--move-to-prev-item)))))
+
 (provide 'test-taut-inbox)
 ;;; test-taut-inbox.el ends here

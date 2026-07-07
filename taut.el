@@ -60,6 +60,16 @@
 (define-key taut-thread-mode-map (kbd "I") #'taut-inbox-show)
 (define-key taut-thread-mode-map (kbd "C") #'taut-focus-chat)
 
+;;;; Global Keybindings for Activity Feed Quick Navigation
+(define-key taut-inbox-mode-map (kbd "C-n") #'taut-inbox-next)
+(define-key taut-inbox-mode-map (kbd "C-p") #'taut-inbox-prev)
+
+(define-key taut-message-mode-map (kbd "C-n") #'taut-inbox-next)
+(define-key taut-message-mode-map (kbd "C-p") #'taut-inbox-prev)
+
+(define-key taut-thread-mode-map (kbd "C-n") #'taut-inbox-next)
+(define-key taut-thread-mode-map (kbd "C-p") #'taut-inbox-prev)
+
 ;;;; Global Minor Mode / Initialization Commands
 
 ;;;###autoload

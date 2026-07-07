@@ -149,6 +149,19 @@ Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
 
 ;;;; Rendering Engine
 
+(defun taut-inbox--find-item-point (item-id)
+  "Find the start of the line displaying the item with ITEM-ID in the current buffer.
+Returns nil if not found."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((found nil))
+      (while (and (not found) (not (eobp)))
+        (let ((item (get-text-property (point) 'taut-inbox-item)))
+          (if (and item (equal (taut-inbox-item-id item) item-id))
+              (setq found (line-beginning-position))
+            (forward-line 1))))
+      found)))
+
 (defun taut-inbox-refresh ()
   "Redraw the Slack Activity buffer contents if it exists and is visible."
   (interactive)
@@ -156,10 +169,29 @@ Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
     (when buf
       (with-current-buffer buf
         (let ((inhibit-read-only t)
-              (old-point (point)))
+              (old-point (point))
+              (win (get-buffer-window buf t))
+              (win-point nil)
+              (current-item (get-text-property (point) 'taut-inbox-item))
+              (current-item-id nil))
+          (when current-item
+            (setq current-item-id (taut-inbox-item-id current-item)))
+          (when win
+            (setq win-point (window-point win))
+            (with-selected-window win
+              (let ((win-item (get-text-property (point) 'taut-inbox-item)))
+                (when win-item
+                  (setq current-item-id (taut-inbox-item-id win-item))))))
           (erase-buffer)
           (taut-inbox--render-feed)
-          (goto-char (min old-point (point-max))))))))
+          (let ((target-point nil))
+            (when current-item-id
+              (setq target-point (taut-inbox--find-item-point current-item-id)))
+            (unless target-point
+              (setq target-point (min (or win-point old-point) (point-max))))
+            (goto-char target-point)
+            (when win
+              (set-window-point win target-point))))))))
 
 (defun taut-inbox--render-header ()
   "Render a beautiful header with navigation and active filter indication."
@@ -494,6 +526,72 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
   (interactive "e")
   (posn-set-point (event-end event))
   (taut-inbox-activate))
+
+(defun taut-inbox--move-to-next-item ()
+  "Move point to the next line with a non-nil 'taut-inbox-item property.
+Returns the item if found, nil otherwise."
+  (let ((found nil)
+        (moved t))
+    (while (and (not found) moved)
+      (setq moved (= (forward-line 1) 0))
+      (when (and moved (not (eobp)))
+        (let ((item (get-text-property (point) 'taut-inbox-item)))
+          (when item
+            (setq found item)))))
+    found))
+
+(defun taut-inbox--move-to-prev-item ()
+  "Move point to the previous line with a non-nil 'taut-inbox-item property.
+Returns the item if found, nil otherwise."
+  (let ((found nil)
+        (moved t))
+    (while (and (not found) moved)
+      (setq moved (= (forward-line -1) 0))
+      (when moved
+        (let ((item (get-text-property (point) 'taut-inbox-item)))
+          (when item
+            (setq found item)))))
+    found))
+
+;;;###autoload
+(defun taut-inbox-next ()
+  "Move to the next visible message in the Slack Activity buffer and activate it."
+  (interactive)
+  (let ((buf (get-buffer "*Slack Activity*")))
+    (if (null buf)
+        (message "Slack Activity buffer does not exist.")
+      (let ((win (get-buffer-window buf t)))
+        (if (null win)
+            (message "Slack Activity window is not visible.")
+          (with-selected-window win
+            (with-current-buffer buf
+              (let ((orig-point (point)))
+                (if (taut-inbox--move-to-next-item)
+                    (progn
+                      (recenter)
+                      (taut-inbox-activate))
+                  (goto-char orig-point)
+                  (message "End of Slack Activity."))))))))))
+
+;;;###autoload
+(defun taut-inbox-prev ()
+  "Move to the previous visible message in the Slack Activity buffer and activate it."
+  (interactive)
+  (let ((buf (get-buffer "*Slack Activity*")))
+    (if (null buf)
+        (message "Slack Activity buffer does not exist.")
+      (let ((win (get-buffer-window buf t)))
+        (if (null win)
+            (message "Slack Activity window is not visible.")
+          (with-selected-window win
+            (with-current-buffer buf
+              (let ((orig-point (point)))
+                (if (taut-inbox--move-to-prev-item)
+                    (progn
+                      (recenter)
+                      (taut-inbox-activate))
+                  (goto-char orig-point)
+                  (message "Beginning of Slack Activity."))))))))))
 
 (defun taut-inbox-mark-read ()
   "Dismiss/Mark read the item under the cursor."
