@@ -156,10 +156,14 @@
 (transient-define-prefix taut-code-block-dispatch ()
   "Operations for the code block under the cursor."
   ["💻 Code Block Actions"
-   ["Operations"
-    ("c" "Copy Block to Clipboard" taut-code-block-copy)
-    ("v" "View in Native Major Mode" taut-code-block-view)
-    ("s" "Save Block to File"      taut-code-block-save)]])
+   ["Read & Edit"
+    ("c" "Copy to Clipboard"      taut-code-block-copy)
+    ("v" "View Read-Only Buffer"  taut-code-block-view)
+    ("E" "Edit Scratchpad Buffer" taut-code-block-edit)
+    ("s" "Save Block to File"     taut-code-block-save)]
+   ["Interactive & Display"
+    ("n" "Toggle Line Numbers"    taut-code-block-toggle-line-numbers)
+    ("e" "Securely Evaluate Code" taut-code-block-evaluate)]])
 
 ;;;###autoload
 (transient-define-prefix taut-compose-dispatch ()

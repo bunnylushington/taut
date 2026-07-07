@@ -132,12 +132,56 @@
 (defvar-local taut-message-no-more-history-p nil
   "Non-nil if there is no more older history to fetch for this channel.")
 
+(defcustom taut-code-block-language-alist
+  '(("elisp" . emacs-lisp)
+    ("emacs-lisp" . emacs-lisp)
+    ("python" . python)
+    ("js" . javascript)
+    ("javascript" . javascript)
+    ("ts" . typescript)
+    ("typescript" . typescript)
+    ("html" . html)
+    ("css" . css)
+    ("bash" . sh)
+    ("sh" . sh)
+    ("shell" . sh)
+    ("ruby" . ruby)
+    ("go" . go)
+    ("rust" . rust)
+    ("elixir" . elixir)
+    ("ex" . elixir)
+    ("clojure" . clojure)
+    ("clj" . clojure)
+    ("sql" . sql)
+    ("yaml" . yaml)
+    ("yml" . yaml)
+    ("json" . js)
+    ("xml" . xml)
+    ("markdown" . markdown)
+    ("md" . markdown))
+  "Alist mapping code block language specifiers to their Emacs major mode base symbols."
+  :type '(repeat (cons (string :tag "Language Specifier")
+                       (symbol :tag "Major Mode Base Symbol")))
+  :group 'taut)
+
+(defun taut-message--valid-lang-p (str)
+  "Return t if STR is a valid programming language identifier."
+  (and str
+       (not (string-blank-p str))
+       (or (assoc-string str taut-code-block-language-alist t)
+           (and (not (string-match-p "[ \t]" str))
+                (<= (length str) 15)
+                (string-match-p "^[a-zA-Z0-9+#_.-]+$" str)))))
+
 (defvar taut-code-block-map (make-sparse-keymap)
   "Keymap active inside code blocks.")
 
 (define-key taut-code-block-map (kbd "c") #'taut-code-block-copy)
 (define-key taut-code-block-map (kbd "v") #'taut-code-block-view)
 (define-key taut-code-block-map (kbd "s") #'taut-code-block-save)
+(define-key taut-code-block-map (kbd "n") #'taut-code-block-toggle-line-numbers)
+(define-key taut-code-block-map (kbd "e") #'taut-code-block-evaluate)
+(define-key taut-code-block-map (kbd "E") #'taut-code-block-edit)
 (define-key taut-code-block-map (kbd "C-c C-y") #'taut-code-block-copy)
 (define-key taut-code-block-map (kbd "C-c C-v") #'taut-code-block-view)
 (define-key taut-code-block-map (kbd "C-c C-s") #'taut-code-block-save)
@@ -162,20 +206,9 @@
         (message "No code block found at point.")
       (let* ((buf-name (format "*Taut Code - %s*" (if (string-blank-p (or lang "")) "text" lang)))
              (buf (get-buffer-create buf-name))
-             (mode-sym (intern (concat (or (cdr (assoc lang '(("elisp" . "emacs-lisp")
-                                                             ("python" . "python")
-                                                             ("js" . "javascript")
-                                                             ("javascript" . "javascript")
-                                                             ("ts" . "typescript")
-                                                             ("html" . "html")
-                                                             ("css" . "css")
-                                                             ("bash" . "sh")
-                                                             ("sh" . "sh")
-                                                             ("ruby" . "ruby")
-                                                             ("go" . "go")
-                                                             ("rust" . "rust"))))
-                                           lang)
-                                       "-mode"))))
+             (mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
+                            lang))
+             (mode-sym (intern (format "%s-mode" mode-base))))
         (with-current-buffer buf
           (erase-buffer)
           (insert code)
@@ -187,15 +220,125 @@
         (pop-to-buffer buf)
         (local-set-key (kbd "q") #'quit-window)))))
 
+(defun taut-code-block-toggle-line-numbers ()
+  "Toggle display of line numbers inside the code block at point."
+  (interactive)
+  (let* ((pos (point))
+         (code (get-text-property pos 'taut-code-block-content))
+         (lang (get-text-property pos 'taut-code-block-lang))
+         (prefix (or (get-text-property pos 'wrap-prefix) "         "))
+         (current-show (get-text-property pos 'taut-code-block-show-line-numbers))
+         (new-show (not current-show)))
+    (if (not code)
+        (message "No code block found at point.")
+      (let ((inhibit-read-only t)
+            (start (previous-single-property-change (1+ pos) 'taut-code-block-content nil (point-min)))
+            (end (next-single-property-change pos 'taut-code-block-content nil (point-max))))
+        (save-excursion
+          (goto-char start)
+          (delete-region start end)
+          (taut-message--insert-code-block-rendered lang code prefix new-show)
+          (message "Toggled line numbers %s." (if new-show "ON" "OFF")))))))
+
+(defun taut-code-block-evaluate ()
+  "Securely evaluate the code block under point."
+  (interactive)
+  (let ((code (get-text-property (point) 'taut-code-block-content))
+        (lang (get-text-property (point) 'taut-code-block-lang)))
+    (if (not code)
+        (message "No code block found at point.")
+      (when (y-or-n-p (format "Evaluate this %s code block?" (upcase lang)))
+        (let ((mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
+                             lang)))
+          (cond
+           ;; Emacs Lisp evaluation
+           ((member mode-base '("elisp" "emacs-lisp" emacs-lisp))
+            (condition-case err
+                (let ((result (eval (car (read-from-string (concat "(progn " code "\n)"))))))
+                  (message "Eval result: %S" result))
+              (error (message "Evaluation error: %s" (error-message-string err)))))
+           
+           ;; Subprocess execution for shell, python, elixir, etc.
+           (t
+            (let* ((interpreter (cdr (assoc-string mode-base
+                                                  '(("python" . "python3")
+                                                    ("elixir" . "elixir")
+                                                    ("ruby" . "ruby")
+                                                    ("js" . "node")
+                                                    ("javascript" . "node")
+                                                    ("ts" . "ts-node")
+                                                    ("sh" . "bash")
+                                                    ("bash" . "bash")
+                                                    ("shell" . "bash"))
+                                                  t)))
+                   (cmd (or interpreter (and (stringp mode-base) mode-base) "bash")))
+              (message "Executing code block with %s..." cmd)
+              (let ((buf (get-buffer-create "*Taut Code Output*")))
+                (with-current-buffer buf
+                  (let ((inhibit-read-only t))
+                    (erase-buffer)
+                    (special-mode)
+                    (local-set-key (kbd "q") #'quit-window)
+                    (insert (format "=== Execution of %s block ===\n\n" (upcase lang)))))
+                (pop-to-buffer buf)
+                (let ((process-connection-type nil)) ; use pipe
+                  (let ((proc (start-process "taut-eval" buf cmd)))
+                    (process-send-string proc code)
+                    (process-send-eof proc)))))))))))
+
+(defun taut-code-block-edit ()
+  "Open the code block under point in a writable, temporary buffer with its native major-mode."
+  (interactive)
+  (let ((code (get-text-property (point) 'taut-code-block-content))
+        (lang (get-text-property (point) 'taut-code-block-lang)))
+    (if (not code)
+        (message "No code block found at point.")
+      (let* ((buf-name (format "*Taut Scratch - %s*" (if (string-blank-p (or lang "")) "text" lang)))
+             (buf (get-buffer-create buf-name))
+             (mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
+                            lang))
+             (mode-sym (intern (format "%s-mode" mode-base))))
+        (with-current-buffer buf
+          (erase-buffer)
+          (insert code)
+          (if (fboundp mode-sym)
+              (funcall mode-sym)
+            (normal-mode))
+          (setq-local header-line-format "📝 Scratchpad Code Block  [q to close]"))
+        (pop-to-buffer buf)
+        (local-set-key (kbd "q") #'quit-window)))))
+
 (defun taut-code-block-save (filename)
   "Save the raw contents of the code block at point to FILENAME."
-  (interactive "FSave code block as: ")
+  (interactive
+   (let* ((lang (get-text-property (point) 'taut-code-block-lang))
+          (ext (or (and lang (cdr (assoc-string lang
+                                                '(("elisp" . "el")
+                                                  ("emacs-lisp" . "el")
+                                                  ("python" . "py")
+                                                  ("elixir" . "ex")
+                                                  ("ex" . "ex")
+                                                  ("ruby" . "rb")
+                                                  ("js" . "js")
+                                                  ("javascript" . "js")
+                                                  ("ts" . "ts")
+                                                  ("typescript" . "ts")
+                                                  ("sh" . "sh")
+                                                  ("bash" . "sh")
+                                                  ("html" . "html")
+                                                  ("css" . "css")
+                                                  ("rust" . "rs")
+                                                  ("go" . "go"))
+                                                t)))
+                   "txt"))
+          (default-name (format "snippet.%s" ext)))
+     (list (read-file-name "Save code block as: " nil nil nil default-name))))
   (let ((code (get-text-property (point) 'taut-code-block-content)))
     (if (not code)
         (message "No code block found at point.")
       (with-temp-file filename
         (insert code))
-      (message "Code block saved to %s" filename))))
+      (message "Code block saved to %s" filename)))))
 
 (defvar taut-message-thread-button-map
   (let ((map (make-sparse-keymap)))
@@ -978,7 +1121,22 @@ Insert at point with premium faces and interactive links."
           (insert prefix)))
       (taut-message--insert-formatted-line line))))
 
-(defun taut-message--insert-code-block-rendered (lang code prefix)
+(defun taut-message--fontify-string (code lang)
+  "Return CODE string fontified as LANG."
+  (let* ((mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
+                        lang))
+         (mode-sym (and mode-base (intern (format "%s-mode" mode-base)))))
+    (with-temp-buffer
+      (insert code)
+      (condition-case nil
+          (if (and mode-sym (fboundp mode-sym))
+              (funcall mode-sym)
+            (normal-mode))
+        (error (normal-mode)))
+      (ignore-errors (font-lock-ensure))
+      (buffer-string))))
+
+(defun taut-message--insert-code-block-rendered (lang code prefix &optional show-line-numbers)
   "Render a multi-line code block in LANG with content CODE."
   (let* ((lang (or lang "text"))
          (code (or code ""))
@@ -995,15 +1153,26 @@ Insert at point with premium faces and interactive links."
     (insert prefix "├" border-line "\n")
     
     ;; Insert code content with prefix on each line, limited to 10 lines
-    (let* ((lines (split-string code "\n"))
+    (let* ((fontified-code (taut-message--fontify-string code lang))
+           (lines (split-string fontified-code "\n"))
            (total-count (length lines))
            (max-lines 10)
            (show-lines (if (> total-count max-lines)
                            (butlast lines (- total-count max-lines))
                          lines))
-           (hidden-count (- total-count max-lines)))
+           (hidden-count (- total-count max-lines))
+           (idx 1))
       (dolist (line show-lines)
-        (insert margin-prefix (propertize (concat line "\n") 'face code-face)))
+        (insert margin-prefix)
+        (when show-line-numbers
+          (let* ((digit-width (length (number-to-string total-count)))
+                 (fmt-str (format "%%%dd │ " digit-width))
+                 (num-str (format fmt-str idx)))
+            (insert (propertize num-str 'face '(:foreground "#8a8a8a")))))
+        (let ((start-line (point)))
+          (insert line "\n")
+          (add-face-text-property start-line (point) code-face t))
+        (setq idx (1+ idx)))
       (when (> hidden-count 0)
         (insert margin-prefix
                 (propertize (format "... (+%d lines hidden, press v to view) ...\n" hidden-count)
@@ -1015,9 +1184,10 @@ Insert at point with premium faces and interactive links."
     ;; Save text properties and interactive keymap on the whole rendered block
     (add-text-properties start-pos (point)
                          (list 'taut-code-block-content code
-                                'taut-code-block-lang lang
-                                'keymap taut-code-block-map
-                                'rear-nonsticky t))))
+                               'taut-code-block-lang lang
+                               'taut-code-block-show-line-numbers show-line-numbers
+                               'keymap taut-code-block-map
+                               'rear-nonsticky t))))
 
 (defun taut-message--insert-formatted-text (text &optional prefix)
   "Parse Slack formatting, including multi-line code blocks and inline formatting."
@@ -1029,7 +1199,12 @@ Insert at point with premium faces and interactive links."
                 (string-match "```\\([^\n\r]*\\)\r?\n" text start))
       (let* ((match-start (match-beginning 0))
              (match-end (match-end 0))
-             (lang (string-trim (match-string 1 text)))
+             (raw-lang (string-trim (match-string 1 text)))
+             (is-valid-lang (taut-message--valid-lang-p raw-lang))
+             (lang (if is-valid-lang raw-lang "text"))
+             (code-start (if (or is-valid-lang (string-blank-p raw-lang))
+                             match-end
+                           (+ match-start 3)))
              (code nil)
              (block-end nil))
         
@@ -1039,7 +1214,7 @@ Insert at point with premium faces and interactive links."
             (taut-message--insert-formatted-text-normal pre-text prefix)))
         
         ;; Check if this is a file snippet fallback block: ```lang\n```\n<content>
-        (if (and (not (string-blank-p lang))
+        (if (and is-valid-lang
                  (string-match "\\````\r?\n" (substring text match-end)))
             (let ((content-start (+ match-end (match-end 0))))
               (if (string-match "\r?\n[ \t\r]*```" text content-start)
@@ -1049,10 +1224,10 @@ Insert at point with premium faces and interactive links."
                       block-end len)))
           
           ;; Normal code block: ```lang\n<code>\n```
-          (if (string-match "\r?\n[ \t\r]*```" text match-end)
-              (setq code (substring text match-end (match-beginning 0))
+          (if (string-match "\r?\n[ \t\r]*```" text code-start)
+              (setq code (substring text code-start (match-beginning 0))
                     block-end (match-end 0))
-            (setq code (substring text match-end)
+            (setq code (substring text code-start)
                   block-end len)))
         
         ;; Render the code block

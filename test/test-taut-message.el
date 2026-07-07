@@ -172,5 +172,63 @@
         (should (equal opened-url "slack://channel?id=C_HUDDLE_CHAN"))
         (kill-buffer curr-buf)))))
 
+(ert-deftest taut-message-code-block-parsing-test ()
+  "Test code block parsing permutations, language detection, and first-line preservation."
+  ;; 1. Test language predicate
+  (should (taut-message--valid-lang-p "elisp"))
+  (should (taut-message--valid-lang-p "elixir"))
+  (should (taut-message--valid-lang-p "python"))
+  (should (taut-message--valid-lang-p "sh"))
+  (should-not (taut-message--valid-lang-p "HDISK2  0        ENABLED"))
+  (should-not (taut-message--valid-lang-p "/dev/fslv01"))
+  (should-not (taut-message--valid-lang-p ""))
+  (should-not (taut-message--valid-lang-p nil))
+
+  ;; 2. Test standard language-tagged block parsing
+  (with-temp-buffer
+    (taut-message--insert-formatted-text "```python\nprint(\"hello\")\n```")
+    (let ((lang (get-text-property (point-min) 'taut-code-block-lang))
+          (code (get-text-property (point-min) 'taut-code-block-content)))
+      (should (equal lang "python"))
+      (should (string-match-p "print(\"hello\")" code))))
+
+  ;; 3. Test standard untagged block parsing
+  (with-temp-buffer
+    (taut-message--insert-formatted-text "```\njust text\n```")
+    (let ((lang (get-text-property (point-min) 'taut-code-block-lang))
+          (code (get-text-property (point-min) 'taut-code-block-content)))
+      (should (equal lang "text"))
+      (should (string-match-p "just text" code))))
+
+  ;; 4. Test first-line content preservation (the bug fix)
+  (with-temp-buffer
+    (taut-message--insert-formatted-text "```HDISK2  0        ENABLED  SEL,OPT      FSCSI0\nhdisk2  1        Enabled  Non          fscsi0\n```")
+    (let ((lang (get-text-property (point-min) 'taut-code-block-lang))
+          (code (get-text-property (point-min) 'taut-code-block-content)))
+      ;; Language should default to "text" instead of treating first line as lang
+      (should (equal lang "text"))
+      ;; Code content must preserve the entire first line
+      (should (string-match-p "HDISK2  0        ENABLED  SEL,OPT      FSCSI0" code))
+      (should (string-match-p "hdisk2  1        Enabled  Non          fscsi0" code)))))
+
+(ert-deftest taut-message-code-block-toggle-line-numbers-test ()
+  "Test dynamic line number toggling within rendered code blocks."
+  (with-temp-buffer
+    (taut-message--insert-formatted-text "```python\nprint(1)\nprint(2)\n```")
+    (goto-char (point-min))
+    ;; Initially, line numbers should be OFF
+    (should-not (get-text-property (point) 'taut-code-block-show-line-numbers))
+    (should-not (string-match-p "1 │" (buffer-string)))
+    
+    ;; Toggle line numbers ON
+    (taut-code-block-toggle-line-numbers)
+    (should (get-text-property (point) 'taut-code-block-show-line-numbers))
+    (should (string-match-p "1 │ print" (buffer-string)))
+    
+    ;; Toggle line numbers OFF again
+    (taut-code-block-toggle-line-numbers)
+    (should-not (get-text-property (point) 'taut-code-block-show-line-numbers))
+    (should-not (string-match-p "1 │" (buffer-string)))))
+
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here
