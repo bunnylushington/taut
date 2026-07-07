@@ -83,7 +83,13 @@
     ;; 2. Channel mentions with and without labels
     (should (equal (taut-inbox--clean-snippet "Go to <#C_GENERAL>") "Go to #general"))
     (should (equal (taut-inbox--clean-snippet "Join <#C_GENERAL|general-announcements>") "Join #general-announcements"))
-    (should (equal (taut-inbox--clean-snippet "Go to <#C_NONEXISTENT>") "Go to #C_NONEXISTENT"))))
+    (should (equal (taut-inbox--clean-snippet "Go to <#C_NONEXISTENT>") "Go to #C_NONEXISTENT"))
+    
+    ;; 3. Standard and Custom URL/URI links
+    (should (equal (taut-inbox--clean-snippet "Go to <https://github.com/anaryk|anaryk> for details") "Go to anaryk for details"))
+    (should (equal (taut-inbox--clean-snippet "Check out <https://google.com>") "Check out https://google.com"))
+    (should (equal (taut-inbox--clean-snippet "Send mail to <mailto:anaryk@gmail.com|email me> here") "Send mail to email me here"))
+    (should (equal (taut-inbox--clean-snippet "Get <taut-file://foo|file.txt>") "Get file.txt"))))
 
 (ert-deftest taut-inbox-render-test ()
   "Test rendering the inbox buffer with correct items and layouts."

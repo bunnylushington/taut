@@ -302,5 +302,39 @@ line8
         (should (string-match-p "```elisp" (taut-message-text new-msg)))
         (should-not (string-match-p "```\n(defun hello" (taut-message-text new-msg)))))))
 
+(ert-deftest taut-message-thread-replies-line-properties-test ()
+  "Test that the entire replies line, including indentation and newline, has correct properties."
+  (taut-model-clear-all)
+  (let* ((msg (make-taut-message :ts "1688500000.111"
+                                 :text "Test root message"
+                                 :reply-count 5
+                                 :channel-id "C1"
+                                 :user-id "U1")))
+    (with-temp-buffer
+      (taut-message--render-message-line msg)
+      
+      ;; Search for "replies" in the buffer
+      (goto-char (point-min))
+      (should (search-forward "replies" nil t))
+      
+      ;; Go to the start of this line (the indentation "         ")
+      (forward-line 0)
+      (let ((start-pos (point)))
+        ;; Verify the start of the line has keymap and metadata properties
+        (should (get-text-property start-pos 'keymap))
+        (should (equal (get-text-property start-pos 'taut-thread-ts) "1688500000.111"))
+        (should (equal (get-text-property start-pos 'taut-message-ts) "1688500000.111"))
+        (should (equal (get-text-property start-pos 'taut-message-id) (taut-message-id msg))))
+      
+      ;; Go to the end of the line (on the newline character)
+      (end-of-line)
+      (let ((eol-pos (point)))
+        ;; Verify the newline itself has keymap and metadata properties, but NO mouse-face
+        (should (get-text-property eol-pos 'keymap))
+        (should (equal (get-text-property eol-pos 'taut-thread-ts) "1688500000.111"))
+        (should (equal (get-text-property eol-pos 'taut-message-ts) "1688500000.111"))
+        (should (equal (get-text-property eol-pos 'taut-message-id) (taut-message-id msg)))
+        (should-not (get-text-property eol-pos 'mouse-face))))))
+
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here

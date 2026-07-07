@@ -495,6 +495,15 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
                          (format "#%s" name)))
                      clean
                      t))
+             ;; Translate standard Slack links (e.g. <https://github.com|github> or <https://github.com>)
+             (clean (replace-regexp-in-string
+                     "<\\([^@#!>|][^>|]*\\)\\(|\\([^>]+\\)\\)?>"
+                     (lambda (m)
+                       (let ((url (match-string 1 m))
+                             (label (match-string 3 m)))
+                         (or label url)))
+                     clean
+                     t))
              (trimmed (replace-regexp-in-string "^\\s-+\\|\\s-+$" "" clean)))
         (if (> (length trimmed) 80)
             (concat (substring trimmed 0 80) "...")

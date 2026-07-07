@@ -846,14 +846,20 @@ history from API first."
       (when (and reply-count (> reply-count 0) (not (eq major-mode 'taut-thread-mode)))
         (let* ((expanded (member ts taut-expanded-threads))
                (icon (if expanded "▼" "▶"))
-               (label (format "💬 %s %d %s " icon reply-count (if (= reply-count 1) "reply" "replies"))))
-          (insert "         "
-                  (propertize label
-                              'face 'taut-message-thread-link
+               (label (propertize (format "💬 %s %d %s " icon reply-count (if (= reply-count 1) "reply" "replies"))
+                                  'face 'taut-message-thread-link))
+               (full-line (concat "         " label)))
+          (insert (propertize full-line
                               'mouse-face 'highlight
                               'keymap taut-message-thread-button-map
-                              'taut-thread-ts ts)
-                  "\n")
+                              'taut-thread-ts ts
+                              'taut-message-ts ts
+                              'taut-message-id (taut-message-id msg))
+                  (propertize "\n"
+                              'keymap taut-message-thread-button-map
+                              'taut-thread-ts ts
+                              'taut-message-ts ts
+                              'taut-message-id (taut-message-id msg)))
           ;; If expanded inline, render replies
           (when expanded
             (let ((replies (taut-model-get-thread-replies ts)))
