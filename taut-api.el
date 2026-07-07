@@ -540,14 +540,22 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                      ;; Mark as unread if it is not sent by current user.
                      ;; Use last-read if available; otherwise use index-based
                      ;; unread-left counting.
-                     (is-unread (and (not is-me)
+                     (is-unread (and (or (not is-me)
+                                         (and (boundp 'taut-inbox-include-self-dm)
+                                              taut-inbox-include-self-dm
+                                              (let ((chan (taut-model-get-channel channel-id)))
+                                                (and chan (taut-channel-is-self-dm-p chan)))))
                                      (if last-read
                                          (string< last-read ts)
                                        (>= current-eligible-idx
                                            (- eligible-count unread-left)))))
                      ;; Convert reactions list to taut representation
                      (model-reactions nil))
-                (unless is-me
+                (unless (and is-me
+                             (not (and (boundp 'taut-inbox-include-self-dm)
+                                       taut-inbox-include-self-dm
+                                       (let ((chan (taut-model-get-channel channel-id)))
+                                         (and chan (taut-channel-is-self-dm-p chan))))))
                   (cl-incf current-eligible-idx))
                 (dolist (r reactions)
                   (let ((r-name (cdr (assoc 'name r))))

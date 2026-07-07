@@ -27,6 +27,19 @@
   :type 'string
   :group 'taut)
 
+(defcustom taut-inbox-include-self-messages nil
+  "Whether to include messages sent by yourself in the DM Activity Feed.
+This is especially useful for developers testing self-messages or wanting
+to see their own direct messages in their DM streams."
+  :type 'boolean
+  :group 'taut)
+
+(defcustom taut-inbox-include-self-dm nil
+  "Whether to include messages received/sent in your own self-DM channel.
+This is useful during development to see notes and tests sent in your personal DM."
+  :type 'boolean
+  :group 'taut)
+
 (defcustom taut-consolidate-windows nil
   "Whether and how to consolidate Taut windows into a single tab or frame.
 Accepted values are:
@@ -344,6 +357,15 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
              taut-users)
     found))
 
+(defun taut-channel-is-self-dm-p (chan)
+  "Return non-nil if CHAN is the current user's own self-DM."
+  (and (eq (taut-channel-type chan) 'dm)
+       (let ((me (taut-model-get-user taut-current-user-id)))
+         (or (equal (taut-channel-name chan) taut-current-user-id)
+             (and me
+                  (or (equal (taut-channel-name chan) (taut-user-username me))
+                      (equal (taut-channel-name chan) (format "user-%s" taut-current-user-id))))))))
+
 (defun taut-model-normalize-presence (presence-val)
   "Normalize PRESENCE-VAL (string, symbol, or other) to 'online, 'away, or 'offline."
   (cond
@@ -448,7 +470,10 @@ Unified Inbox contains:
              ;; If it's a DM, any unread message goes to inbox (unless sent by me)
              (cond
               ((and (eq (taut-channel-type chan) 'dm)
-                    (not (equal (taut-message-user-id msg) taut-current-user-id)))
+                    (or (not (equal (taut-message-user-id msg) taut-current-user-id))
+                        taut-inbox-include-self-messages
+                        (and taut-inbox-include-self-dm
+                             (taut-channel-is-self-dm-p chan))))
                (push (make-taut-inbox-item
                       :id (taut-message-ts msg)
                       :type 'dm
@@ -481,8 +506,12 @@ Unified Inbox contains:
       (let* ((replies (gethash th-ts taut-threads))
              (last-reply (car (last replies))))
         (when (and last-reply
-                   (not (equal (taut-message-user-id last-reply) taut-current-user-id))
-                   (taut-message-is-unread last-reply))
+                   (taut-message-is-unread last-reply)
+                   (let* ((chan-id (taut-message-channel-id last-reply))
+                          (chan (taut-model-get-channel chan-id)))
+                     (or (not (equal (taut-message-user-id last-reply) taut-current-user-id))
+                         (and taut-inbox-include-self-messages (and chan (eq (taut-channel-type chan) 'dm)))
+                         (and taut-inbox-include-self-dm (and chan (taut-channel-is-self-dm-p chan))))))
           ;; Find root message to get channel info and snippet
           (let* ((chan-id (taut-message-channel-id last-reply))
                  (chan (taut-model-get-channel chan-id))
@@ -513,9 +542,15 @@ rolled up by source conversation (channel or DM)."
     (maphash
      (lambda (chan-id chan)
        (let* ((msgs (gethash chan-id taut-messages))
-              ;; Keep only non-me messages
-              (non-me-msgs (cl-remove-if (lambda (m) (equal (taut-message-user-id m) taut-current-user-id)) msgs))
               (is-dm (eq (taut-channel-type chan) 'dm))
+              ;; Keep only non-me messages, unless inclusion of self messages in DMs is enabled
+              (non-me-msgs (cl-remove-if
+                            (lambda (m)
+                              (and (equal (taut-message-user-id m) taut-current-user-id)
+                                   (not (or (and taut-inbox-include-self-messages is-dm)
+                                            (and taut-inbox-include-self-dm
+                                                 (taut-channel-is-self-dm-p chan))))))
+                            msgs))
               ;; Relevant messages: all for DM, unreads/mentions for channels
               (relevant-msgs
                (cl-remove-if-not
@@ -582,27 +617,32 @@ rolled up by source conversation (channel or DM)."
     (dolist (th-ts taut-watched-threads)
       (let* ((replies (gethash th-ts taut-threads))
              (last-reply (car (last replies))))
-        ;; We include the thread if there is at least one reply not from us
+        ;; We include the thread if there is at least one reply not from us (or if it is our self DM / DM self-inclusion)
         (when last-reply
-          (let ((non-me-replies (cl-remove-if (lambda (r) (equal (taut-message-user-id r) taut-current-user-id)) replies)))
-            (when non-me-replies
-              (let* ((newest-non-me-reply (car (last non-me-replies)))
-                     (chan-id (taut-message-channel-id newest-non-me-reply))
-                     (chan (taut-model-get-channel chan-id))
+          (let* ((chan-id (taut-message-channel-id last-reply))
+                 (chan (taut-model-get-channel chan-id))
+                 (include-self (or (and taut-inbox-include-self-messages chan (eq (taut-channel-type chan) 'dm))
+                                   (and taut-inbox-include-self-dm chan (taut-channel-is-self-dm-p chan))))
+                 (filtered-replies (cl-remove-if (lambda (r)
+                                                   (and (equal (taut-message-user-id r) taut-current-user-id)
+                                                        (not include-self)))
+                                                 replies)))
+            (when filtered-replies
+              (let* ((newest-reply (car (last filtered-replies)))
                      (chan-name (if chan (or (taut-channel-name chan) "unknown") "unknown"))
                      (is-dm (and chan (eq (taut-channel-type chan) 'dm))))
                 (push (make-taut-inbox-item
                        :id th-ts
                        :type 'thread-update
                        :channel-id chan-id
-                       :message-id (taut-message-id newest-non-me-reply)
+                       :message-id (taut-message-id newest-reply)
                        :thread-ts th-ts
-                       :user-id (taut-message-user-id newest-non-me-reply)
+                       :user-id (taut-message-user-id newest-reply)
                        :title (if is-dm (format "Thread in DM: @%s" chan-name) (format "Thread: #%s" chan-name))
-                       :snippet (format "Reply: %s" (taut-message-text newest-non-me-reply))
-                       :ts (taut-message-ts newest-non-me-reply)
-                       :is-read (not (taut-message-is-unread newest-non-me-reply))
-                       :unread-count (length (cl-remove-if-not #'taut-message-is-unread non-me-replies)))
+                       :snippet (format "Reply: %s" (taut-message-text newest-reply))
+                       :ts (taut-message-ts newest-reply)
+                       :is-read (not (taut-message-is-unread newest-reply))
+                       :unread-count (length (cl-remove-if-not #'taut-message-is-unread filtered-replies)))
                       items)))))))
 
     ;; Sort items descending by timestamp so most recent is on top
@@ -728,7 +768,9 @@ Preserves existing is-hidden state if already present."
 
     ;; Update channel unread/mention statistics (only if not a duplicate)
     (unless is-duplicate
-      (when (and chan (not (equal (taut-message-user-id msg) taut-current-user-id)))
+      (when (and chan (or (not (equal (taut-message-user-id msg) taut-current-user-id))
+                          (and taut-inbox-include-self-dm
+                               (taut-channel-is-self-dm-p chan))))
         (when (and (taut-message-is-unread msg) (not no-inc-unread-p))
           (unless (taut-channel-unread-count chan)
             (setf (taut-channel-unread-count chan) 0))
