@@ -288,7 +288,7 @@
                 (let ((process-connection-type nil)) ; use pipe
                   (let ((proc (start-process "taut-eval" buf cmd)))
                     (process-send-string proc code)
-                    (process-send-eof proc)))))))))))
+                    (process-send-eof proc))))))))))))
 
 ;;;###autoload
 (defun taut-code-block-edit ()
@@ -344,7 +344,7 @@
         (message "No code block found at point.")
       (with-temp-file filename
         (insert code))
-      (message "Code block saved to %s" filename)))))
+      (message "Code block saved to %s" filename))))
 
 (defvar taut-message-thread-button-map
   (let ((map (make-sparse-keymap)))
