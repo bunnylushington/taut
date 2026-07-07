@@ -89,7 +89,12 @@
     (should (equal (taut-inbox--clean-snippet "Go to <https://github.com/anaryk|anaryk> for details") "Go to anaryk for details"))
     (should (equal (taut-inbox--clean-snippet "Check out <https://google.com>") "Check out https://google.com"))
     (should (equal (taut-inbox--clean-snippet "Send mail to <mailto:anaryk@gmail.com|email me> here") "Send mail to email me here"))
-    (should (equal (taut-inbox--clean-snippet "Get <taut-file://foo|file.txt>") "Get file.txt"))))
+    (should (equal (taut-inbox--clean-snippet "Get <taut-file://foo|file.txt>") "Get file.txt"))
+    
+    ;; 4. Emoji Translation
+    (should (equal (taut-inbox--clean-snippet "Agree? :thumbsup:") "Agree? 👍"))
+    (should (equal (taut-inbox--clean-snippet "Look here :twisted_rightwards_arrows: now") "Look here 🔀 now"))
+    (should (equal (taut-inbox--clean-snippet "Is this correct? :thinking_face:") "Is this correct? 🤔"))))
 
 (ert-deftest taut-inbox-render-test ()
   "Test rendering the inbox buffer with correct items and layouts."

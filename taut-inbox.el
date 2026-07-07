@@ -506,6 +506,15 @@ Categorizes timestamps into Today, Yesterday, Weekday, or Month."
                          (or label url)))
                      clean
                      t))
+             ;; Translate emoji shortcodes (e.g. :thumbsup:)
+             (clean (replace-regexp-in-string
+                     ":\\([a-zA-Z0-9_+-]+\\):"
+                     (lambda (m)
+                       (let ((emoji-name (match-string 1 m)))
+                         (save-match-data
+                           (taut-emoji-translate emoji-name))))
+                     clean
+                     t))
              (trimmed (replace-regexp-in-string "^\\s-+\\|\\s-+$" "" clean)))
         (if (> (length trimmed) 80)
             (concat (substring trimmed 0 80) "...")
