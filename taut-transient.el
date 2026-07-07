@@ -57,6 +57,7 @@
 (declare-function taut-message-toggle-star "taut-message")
 (declare-function taut-message-next "taut-message")
 (declare-function taut-message-previous "taut-message")
+(declare-function taut-message-copy-reference "taut-message")
 
 (declare-function taut-message-copy-at-point "taut-message")
 (declare-function taut-message-view-at-point "taut-message")
@@ -74,6 +75,7 @@
 (declare-function taut-compose-insert-code-block "taut-compose")
 (declare-function taut-compose-insert-link "taut-compose")
 (declare-function taut-compose-insert-user-mention "taut-compose")
+(declare-function taut-compose-insert-reference "taut-compose")
 (declare-function taut-search-quick "taut-search")
 (declare-function taut-search-advanced "taut-search")
 
@@ -130,6 +132,7 @@
     ("d"   "Delete Message"       taut-message-delete)
     ("a"   "Add Emoji Reaction"   taut-message-add-reaction)
     ("b"   "Toggle Bookmark/Star" taut-message-toggle-star)
+    ("w"   "Copy Msg Reference"   taut-message-copy-reference)
     ("u"   "Upload File"          taut-message-upload-file)
     ("g"   "Refresh History"      taut-message-refresh :if (lambda () (eq major-mode 'taut-message-mode)))
     ("g"   "Refresh Thread"       taut-thread-refresh :if (lambda () (eq major-mode 'taut-thread-mode)))]
@@ -173,6 +176,7 @@
   ["✍️ Taut Compose Actions"
    ["Actions"
     ("C-c" "Send Message"         taut-compose-send)
+    ("C-y" "Yank Msg Reference"   taut-compose-insert-reference)
     ("C-k" "Abort/Discard Draft"  taut-compose-abort)]
    ["Formatting Helpers"
     ("b" "Insert Code Block"     taut-compose-insert-code-block)
