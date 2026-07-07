@@ -14,6 +14,7 @@
 (require 'transient)
 (require 'taut-model)
 (require 'taut-api)
+(require 'taut-message)
 
 ;; Forward declarations for byte-compiler peace of mind
 (declare-function taut-connect "taut")

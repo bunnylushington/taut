@@ -187,6 +187,7 @@
 (define-key taut-code-block-map (kbd "C-c C-s") #'taut-code-block-save)
 (define-key taut-code-block-map (kbd "?") #'taut-code-block-dispatch)
 
+;;;###autoload
 (defun taut-code-block-copy ()
   "Copy the raw contents of the code block at point to the kill ring."
   (interactive)
@@ -197,6 +198,7 @@
           (message "Copied code block contents to clipboard."))
       (message "No code block found at point."))))
 
+;;;###autoload
 (defun taut-code-block-view ()
   "Pop open a temporary buffer with the code in its native major-mode."
   (interactive)
@@ -220,6 +222,7 @@
         (pop-to-buffer buf)
         (local-set-key (kbd "q") #'quit-window)))))
 
+;;;###autoload
 (defun taut-code-block-toggle-line-numbers ()
   "Toggle display of line numbers inside the code block at point."
   (interactive)
@@ -240,6 +243,7 @@
           (taut-message--insert-code-block-rendered lang code prefix new-show)
           (message "Toggled line numbers %s." (if new-show "ON" "OFF")))))))
 
+;;;###autoload
 (defun taut-code-block-evaluate ()
   "Securely evaluate the code block under point."
   (interactive)
@@ -286,6 +290,7 @@
                     (process-send-string proc code)
                     (process-send-eof proc)))))))))))
 
+;;;###autoload
 (defun taut-code-block-edit ()
   "Open the code block under point in a writable, temporary buffer with its native major-mode."
   (interactive)
@@ -308,6 +313,7 @@
         (pop-to-buffer buf)
         (local-set-key (kbd "q") #'quit-window)))))
 
+;;;###autoload
 (defun taut-code-block-save (filename)
   "Save the raw contents of the code block at point to FILENAME."
   (interactive
