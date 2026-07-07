@@ -35,6 +35,10 @@
   (should (equal (taut-emoji-translate "rocket") "🚀"))
   (should (equal (taut-emoji-translate ":rocket:") "🚀"))
   (should (equal (taut-emoji-translate "party") "🎉"))
+  ;; Dynamic lookup using char-from-name
+  (should (equal (taut-emoji-translate "twisted_rightwards_arrows") "🔀"))
+  (should (equal (taut-emoji-translate ":twisted_rightwards_arrows:") "🔀"))
+  (should (equal (taut-emoji-translate "thinking_face") "🤔"))
   (should (equal (taut-emoji-translate "unknown_emoji") ":unknown_emoji:"))
   (should (equal (taut-emoji-translate ":unknown_emoji:") ":unknown_emoji:")))
 

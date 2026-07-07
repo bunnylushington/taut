@@ -1107,21 +1107,29 @@ character or end of string."
 
 (defun taut-emoji-translate (name)
   "Translate Slack emoji shortcode NAME to unicode.
-Allows both raw shortcode names and bracketed format like \":raised_hands:\"."
+Allows both raw shortcode names and bracketed format like \":raised_hands:\".
+If the shortcode is not in `taut-emoji-alist`, attempts to dynamically resolve
+it using Emacs's built-in `char-from-name` by substituting underscores with
+spaces and converting to uppercase."
   (let* ((name (cond
                 ((symbolp name) (symbol-name name))
                 ((stringp name) name)
                 (t "")))
          (clean-name (if (and (string-prefix-p ":" name) (string-suffix-p ":" name))
-                        (substring name 1 -1)
-                      name))
+                         (substring name 1 -1)
+                       name))
          (match (assoc clean-name taut-emoji-alist)))
-    (if match
-        (cdr match)
-      ;; Fallback: return the original shortcode with colons intact
+    (cond
+     (match (cdr match))
+     ;; Dynamic fallback using char-from-name
+     ((let* ((unicode-name (upcase (replace-regexp-in-string "_" " " clean-name)))
+             (char (char-from-name unicode-name)))
+        (and char (string char))))
+     ;; Default fallback: return the original shortcode with colons intact
+     (t
       (if (and (string-prefix-p ":" name) (string-suffix-p ":" name))
           name
-        (concat ":" name ":")))))
+        (concat ":" name ":"))))))
 
 ;;;; Rich Markdown Formatting Parser
 
