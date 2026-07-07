@@ -336,5 +336,43 @@ line8
         (should (equal (get-text-property eol-pos 'taut-message-id) (taut-message-id msg)))
         (should-not (get-text-property eol-pos 'mouse-face))))))
 
+(ert-deftest taut-message-copy-reference-test ()
+  "Test copying a Slack message reference via `taut-message-copy-reference`."
+  (taut-initialize-mock-data)
+  (setq taut-message-reference-ring nil)
+  (let ((msg-ts "1688460000.0001") ;; Alice's development channel message
+        (taut-team-id "T_MY_TEAM"))
+    (with-temp-buffer
+      (insert "Hey team, we're building the new Emacs client Taut!")
+      ;; Add message ts property to point
+      (goto-char (point-min))
+      (let ((inhibit-read-only t))
+        (add-text-properties (point-min) (point-max) (list 'taut-message-ts msg-ts)))
+      
+      ;; 1. Call copy-reference on valid message at point
+      (taut-message-copy-reference)
+      
+      ;; Check reference ring contents
+      (should (= (length taut-message-reference-ring) 1))
+      (let ((ref (car taut-message-reference-ring)))
+        (should (equal (plist-get ref :channel-id) "C_DEV"))
+        (should (equal (plist-get ref :channel-name) "development"))
+        (should (equal (plist-get ref :ts) msg-ts))
+        (should (equal (plist-get ref :author) "alice"))
+        (should (equal (plist-get ref :snippet) "Hey team, we're building the new Emacs client *..."))
+        (should (equal (plist-get ref :url) "https://T_MY_TEAM.slack.com/archives/C_DEV/p16884600000001")))
+      
+      ;; Check kill-ring has URL
+      (should (equal (car kill-ring) "https://T_MY_TEAM.slack.com/archives/C_DEV/p16884600000001"))
+      
+      ;; 2. Capping limit check
+      (let ((taut-message-reference-ring-max 3))
+        (setq taut-message-reference-ring nil)
+        ;; Push 4 references
+        (dotimes (i 4)
+          (taut-message-copy-reference))
+        ;; Should be capped at 3
+        (should (= (length taut-message-reference-ring) 3))))))
+
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here

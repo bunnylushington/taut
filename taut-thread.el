@@ -61,6 +61,7 @@
 (define-key taut-thread-mode-map (kbd "e") #'taut-message-edit)
 (define-key taut-thread-mode-map (kbd "s") #'taut-message-save-at-point)
 (define-key taut-thread-mode-map (kbd "c") #'taut-message-copy-at-point)
+(define-key taut-thread-mode-map (kbd "w") #'taut-message-copy-reference)
 (define-key taut-thread-mode-map (kbd "H") #'taut-huddle-join)
 (define-key taut-thread-mode-map (kbd "?") #'taut-dispatch)
 (define-key taut-thread-mode-map (kbd "/") #'taut-search-quick)

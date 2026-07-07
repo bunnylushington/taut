@@ -43,6 +43,7 @@
     (define-key map (kbd "C-c C-k") #'taut-compose-abort)
     (define-key map (kbd "C-c C-b") #'taut-compose-insert-code-block)
     (define-key map (kbd "C-c C-l") #'taut-compose-insert-link)
+    (define-key map (kbd "C-c C-y") #'taut-compose-insert-reference)
     (define-key map (kbd "C-c C-u") #'taut-compose-insert-user-mention)
     (define-key map (kbd "C-c @") #'taut-compose-insert-user-mention)
     (define-key map (kbd "C-c C-m") #'taut-compose-dispatch)
@@ -232,6 +233,27 @@ Mentions are formatted as <@U_ID|username>."
              (username (and user (taut-user-username user))))
         (when uid
           (insert (format "<@%s|%s>" uid (or username uid))))))))
+
+;;;###autoload
+(defun taut-compose-insert-reference ()
+  "Insert a Slack message reference from the Taut reference ring."
+  (interactive)
+  (if (null taut-message-reference-ring)
+      (message "Taut: Reference ring is empty. Copy a reference with 'w' in a chat buffer first.")
+    (let ((candidates nil))
+      (dolist (ref taut-message-reference-ring)
+        (let* ((channel (plist-get ref :channel-name))
+               (author (plist-get ref :author))
+               (snippet (plist-get ref :snippet))
+               (url (plist-get ref :url))
+               (display (format "[#%s] @%s: %s" channel author snippet)))
+          (unless (assoc display candidates)
+            (push (cons display url) candidates))))
+      (setq candidates (nreverse candidates))
+      (let* ((choice (completing-read "Insert Message Reference: " candidates nil t))
+             (url (cdr (assoc choice candidates))))
+        (when url
+          (insert url))))))
 
 ;;;; Interactive Dispatch Triggers (r / R)
 

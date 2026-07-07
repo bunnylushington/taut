@@ -120,5 +120,37 @@
       (taut-compose-insert-link "https://google.com" "Google")
       (should (equal (buffer-string) "<https://google.com|Google>")))))
 
+(ert-deftest taut-compose-insert-reference-test ()
+  "Test inserting a reference from the ring into the compose buffer."
+  (let ((taut-message-reference-ring nil))
+    ;; 1. If the ring is empty, check it displays warning and does not insert anything
+    (with-temp-buffer
+      (taut-compose-mode)
+      (let ((msg-displayed nil))
+        (cl-letf (((symbol-function 'message) (lambda (format-str &rest _args)
+                                                (when (and (stringp format-str)
+                                                           (string-prefix-p "Taut: Reference ring is empty" format-str))
+                                                  (setq msg-displayed t)))))
+          (taut-compose-insert-reference)
+          (should msg-displayed)
+          (should (string-blank-p (buffer-string)))))))
+
+  ;; 2. If the ring has candidates, verify completing-read is called and selected URL is inserted
+  (let ((taut-message-reference-ring
+         '((:channel-id "C_DEV"
+            :channel-name "development"
+            :ts "1688460000.0001"
+            :author "alice"
+            :snippet "Hey team!"
+            :url "https://T_MY_TEAM.slack.com/archives/C_DEV/p16884600000001"))))
+    (with-temp-buffer
+      (taut-compose-mode)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &optional _predicate _require-match _initial-input _hist _def _inherit-input-method)
+                   ;; Return the display string of the single candidate
+                   (car (car candidates)))))
+        (taut-compose-insert-reference)
+        (should (equal (buffer-string) "https://T_MY_TEAM.slack.com/archives/C_DEV/p16884600000001"))))))
+
 (provide 'test-taut-compose)
 ;;; test-taut-compose.el ends here

@@ -59,6 +59,14 @@ DMs, or threads always open in the dedicated Chat/Thread window."
   :type 'integer
   :group 'taut)
 
+(defcustom taut-message-reference-ring-max 30
+  "Maximum number of Slack message references to keep in the ring."
+  :type 'integer
+  :group 'taut)
+
+(defvar taut-message-reference-ring nil
+  "List of recently copied Slack message reference plists.")
+
 (defun taut-consolidate-method ()
   "Determine the active consolidation method (`tab', `frame', or nil)."
   (cond
@@ -378,6 +386,18 @@ Functions on this hook can redraw buffers like the sidebar or inbox.")
                    (setq found (cl-find ts replies :key #'taut-message-ts :test #'equal))))
                taut-threads))
     found))
+
+(defun taut-message-get-url (channel-id ts &optional thread-ts)
+  "Construct a Slack archive web URL for CHANNEL-ID and TS.
+If THREAD-TS is provided, formats the URL to link directly to the thread reply."
+  (let* ((domain (if (and (boundp 'taut-team-id) taut-team-id)
+                     (format "https://%s.slack.com" taut-team-id)
+                   "https://slack.com"))
+         (clean-ts (replace-regexp-in-string "\\." "" ts))
+         (url (format "%s/archives/%s/p%s" domain channel-id clean-ts)))
+    (if thread-ts
+        (format "%s?thread_ts=%s&cid=%s" url thread-ts channel-id)
+      url)))
 
 (defun taut-model-get-channels-list ()
   "Return a list of all channels, ordered by type and name."

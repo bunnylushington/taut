@@ -489,6 +489,38 @@ Edits made in this buffer can be committed back to the chat using \\[taut-code-b
       (call-interactively #'taut-code-block-copy)
     (message "No code block under cursor.")))
 
+(defun taut-message-copy-reference ()
+  "Copy a web reference URL for the message at point to the kill-ring and the Taut reference ring."
+  (interactive)
+  (let* ((ts (get-text-property (point) 'taut-message-ts))
+         (msg (and ts (taut-model-get-message-by-ts ts))))
+    (if (null msg)
+        (message "Taut: No message found under cursor.")
+      (let* ((chan-id (taut-message-channel-id msg))
+             (chan (taut-model-get-channel chan-id))
+             (chan-name (if chan (or (taut-channel-name chan) "unknown") "unknown"))
+             (author-id (taut-message-user-id msg))
+             (author-user (and author-id (taut-model-get-user author-id)))
+             (author-name (if author-user (or (taut-user-username author-user) author-id) "unknown"))
+             (root-ts (taut-message-thread-ts msg))
+             (actual-thread-ts (and root-ts (not (equal root-ts ts)) root-ts))
+             (url (taut-message-get-url chan-id ts actual-thread-ts))
+             (snippet (let ((text (or (taut-message-text msg) "")))
+                        (if (> (length text) 50)
+                            (concat (substring text 0 47) "...")
+                          text)))
+             (ref (list :channel-id chan-id
+                        :channel-name chan-name
+                        :ts ts
+                        :author author-name
+                        :snippet snippet
+                        :url url)))
+        (setq taut-message-reference-ring (cons ref taut-message-reference-ring))
+        (when (> (length taut-message-reference-ring) taut-message-reference-ring-max)
+          (setq taut-message-reference-ring (cl-subseq taut-message-reference-ring 0 taut-message-reference-ring-max)))
+        (kill-new url)
+        (message "Copied reference to @%s's message in #%s!" author-name chan-name)))))
+
 (defun taut-message-download-file (url name)
   "Prompt the user for a path and download file from URL named NAME."
   (let* ((default-path (expand-file-name (or name "downloaded_file")))
@@ -549,6 +581,7 @@ Edits made in this buffer can be committed back to the chat using \\[taut-code-b
 (define-key taut-message-mode-map (kbd "e") #'taut-message-edit)
 (define-key taut-message-mode-map (kbd "s") #'taut-message-save-at-point)
 (define-key taut-message-mode-map (kbd "c") #'taut-message-copy-at-point)
+(define-key taut-message-mode-map (kbd "w") #'taut-message-copy-reference)
 (define-key taut-message-mode-map (kbd "u") #'taut-message-upload-file)
 (define-key taut-message-mode-map (kbd "d") #'taut-message-delete)
 (define-key taut-message-mode-map (kbd "M") #'taut-message-mark-all-read)

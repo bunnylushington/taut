@@ -316,5 +316,19 @@
       (should (eq (lookup-key map (kbd "I")) #'taut-inbox-show))
       (should (eq (lookup-key map (kbd "C")) #'taut-focus-chat)))))
 
+(ert-deftest taut-message-get-url-test ()
+  "Test constructing Slack archive URLs via `taut-message-get-url`."
+  (let ((taut-team-id "T_MY_TEAM"))
+    ;; Without thread context
+    (should (equal (taut-message-get-url "C_CHAN" "1688400000.000100")
+                   "https://T_MY_TEAM.slack.com/archives/C_CHAN/p1688400000000100"))
+    ;; With thread context
+    (should (equal (taut-message-get-url "C_CHAN" "1688400000.000100" "1688390000.000000")
+                   "https://T_MY_TEAM.slack.com/archives/C_CHAN/p1688400000000100?thread_ts=1688390000.000000&cid=C_CHAN")))
+  ;; Standard fallback without taut-team-id
+  (let ((taut-team-id nil))
+    (should (equal (taut-message-get-url "C_CHAN" "1688400000.000100")
+                   "https://slack.com/archives/C_CHAN/p1688400000000100"))))
+
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here
