@@ -111,6 +111,13 @@
   "Face for beautiful Slack Huddle inline summary boxes."
   :group 'taut-faces)
 
+(defface taut-message-huddle-border
+  '((((background dark))  :foreground "#2b6cb0")
+    (((background light)) :foreground "#90cdf4")
+    (t                    :foreground "#90cdf4"))
+  "Face for the border characters of Slack Huddle inline summary boxes."
+  :group 'taut-faces)
+
 ;;;; Buffer-Local Variables
 
 (defvar-local taut-current-channel-id nil
@@ -491,45 +498,44 @@ history from API first."
                  (in-progress "Slack Huddle (Active)")
                  (t "Slack Huddle")))
          (details (let ((clean (replace-regexp-in-string "📞 Slack Huddle" "" text)))
-                    (setq clean (replace-regexp-in-string " ?\\(Ended\\)" "" clean))
+                    (setq clean (replace-regexp-in-string " ?(Ended)" "" clean))
+                    (setq clean (replace-regexp-in-string " ?(Active)" "" clean))
                     (setq clean (replace-regexp-in-string " ?in progress" "" clean))
                     (setq clean (string-trim clean))
                     (if (string-prefix-p ":" clean)
                         (string-trim (substring clean 1))
                       clean)))
          (icon (if in-progress "🎧" "📞"))
-         (box-face 'taut-message-huddle-box)
+         (border-face 'taut-message-huddle-border)
          (width 60)
          (content-width (- width 4)))
     ;; Print top border
-    (insert (propertize "╭" 'face box-face)
-            (propertize (make-string (- width 2) ?─) 'face box-face)
-            (propertize "╮\n" 'face box-face))
+    (insert (propertize "╭" 'face border-face)
+            (propertize (make-string (- width 2) ?─) 'face border-face)
+            (propertize "╮\n" 'face border-face))
     ;; Title line
     (let* ((title-text (format "%s  %s" icon title))
-           (padding (- content-width (length title-text))))
+           (padding (- content-width (string-width title-text))))
       (insert prefix
-              (propertize "│ " 'face box-face)
+              (propertize "│ " 'face border-face)
               (propertize title-text 'face 'bold)
               (propertize (make-string (max 0 padding) ? ) 'face 'default)
-              (propertize " │\n" 'face box-face)))
+              (propertize " │\n" 'face border-face)))
     ;; Details line
     (unless (string-blank-p details)
       (let* ((details-text (format "    %s" details))
-             (truncated-details (if (> (length details-text) content-width)
-                                    (concat (substring details-text 0 (- content-width 3)) "...")
-                                  details-text))
-             (padding (- content-width (length truncated-details))))
+             (truncated-details (truncate-string-to-width details-text content-width nil nil "..."))
+             (padding (- content-width (string-width truncated-details))))
         (insert prefix
-                (propertize "│ " 'face box-face)
+                (propertize "│ " 'face border-face)
                 (propertize truncated-details 'face 'font-lock-comment-face)
                 (propertize (make-string (max 0 padding) ? ) 'face 'default)
-                (propertize " │\n" 'face box-face))))
+                (propertize " │\n" 'face border-face))))
     ;; Print bottom border
     (insert prefix
-            (propertize "╰" 'face box-face)
-            (propertize (make-string (- width 2) ?─) 'face box-face)
-            (propertize "╯" 'face box-face))))
+            (propertize "╰" 'face border-face)
+            (propertize (make-string (- width 2) ?─) 'face border-face)
+            (propertize "╯" 'face border-face))))
 
 (defun taut-message--render-message-line (msg)
   "Render a single message line MSG."
