@@ -722,17 +722,17 @@ history from API first."
          (chan-name (if chan (taut-channel-name chan) chan-id))
          (chan-topic (if chan (taut-channel-topic chan) "(no topic set)"))
          (msgs (taut-model-get-messages chan-id)))
-    ;; Buffer title banner
-    (insert (propertize (if (eq chan-type 'dm)
-                            (format "  👤 @%s" chan-name)
-                          (format "  #  %s" chan-name))
-                        'face '(:weight bold :height 1.2))
-            "\n"
-            (propertize (or chan-topic "(no topic set)")
-                        'face 'font-lock-comment-face)
-            "\n"
-            (make-string (window-body-width) ?─)
-            "\n\n")
+    ;; Set buffer-local header-line-format for an anchored premium header
+    (setq header-line-format
+          (concat
+           (propertize (if (eq chan-type 'dm)
+                           (format " 👤 @%s" chan-name)
+                         (format " ♯ %s" chan-name))
+                       'face '(:weight bold :foreground "#36c5f0"))
+           (propertize (format "  |  %s" (or chan-topic "(no topic set)"))
+                       'face 'font-lock-comment-face)))
+
+    (insert "\n")
 
     (if (null msgs)
         (insert "\n\n  No messages in this conversation yet. Send a message with `r`!\n")

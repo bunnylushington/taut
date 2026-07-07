@@ -125,9 +125,13 @@ replies from API first."
       (let ((replies (taut-model-get-thread-replies thread-ts))
             (chan (taut-api-get-or-fetch-channel root-chan-id)))
         
-        ;; Header Banner
-        (insert (propertize " 💬 THREAD DISCUSSION " 'face 'taut-thread-root-header)
-                (propertize (format " in #%s\n\n" (if chan (or (taut-channel-name chan) "unknown") "unknown")) 'face 'font-lock-comment-face))
+        ;; Set buffer-local header-line-format for an anchored premium header
+        (setq header-line-format
+              (concat
+               (propertize " 💬 THREAD DISCUSSION" 'face '(:weight bold :foreground "#e01e5a"))
+               (propertize (format "  |  in #%s" (if chan (or (taut-channel-name chan) "unknown") "unknown")) 'face 'font-lock-comment-face)))
+
+        (insert "\n")
 
         ;; Root Message
         (insert (propertize "Root Message:\n" 'face '(:weight bold :height 0.9 :foreground "#8a8a8a")))
