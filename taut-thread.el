@@ -65,6 +65,7 @@
 (define-key taut-thread-mode-map (kbd "H") #'taut-huddle-join)
 (define-key taut-thread-mode-map (kbd "?") #'taut-dispatch)
 (define-key taut-thread-mode-map (kbd "/") #'taut-search-quick)
+(define-key taut-thread-mode-map (kbd "t") #'toggle-truncate-lines)
 
 (define-derived-mode taut-thread-mode special-mode "Taut-Thread"
   "Major mode for the Taut side-by-side Thread Discussion view.
@@ -76,7 +77,12 @@
   (setq-local view-read-only nil)
   (when (and (boundp 'view-mode) view-mode)
     (view-mode -1))
-  (visual-line-mode 1))
+  (if taut-truncate-lines
+      (progn
+        (setq-local truncate-lines t)
+        (visual-line-mode -1))
+    (setq-local truncate-lines nil)
+    (visual-line-mode 1)))
 
 ;;;; Rendering Engine
 

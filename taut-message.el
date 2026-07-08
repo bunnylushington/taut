@@ -170,6 +170,11 @@
   :type 'integer
   :group 'taut)
 
+(defcustom taut-truncate-lines nil
+  "If non-nil, truncate long lines in Taut conversation and thread buffers."
+  :type 'boolean
+  :group 'taut)
+
 (defcustom taut-display-images-inline t
   "If non-nil and Emacs supports it, display image attachments inline."
   :type 'boolean
@@ -647,6 +652,7 @@ Edits made in this buffer can be committed back to the chat using \\[taut-code-b
 (define-key taut-message-mode-map (kbd "H") #'taut-huddle-join)
 (define-key taut-message-mode-map (kbd "?") #'taut-dispatch)
 (define-key taut-message-mode-map (kbd "/") #'taut-search-quick)
+(define-key taut-message-mode-map (kbd "t") #'toggle-truncate-lines)
 
 (define-derived-mode taut-message-mode special-mode "Taut-Chat"
   "Major mode for a Taut Slack conversation buffer.
@@ -658,7 +664,12 @@ Edits made in this buffer can be committed back to the chat using \\[taut-code-b
   (setq-local view-read-only nil)
   (when (and (boundp 'view-mode) view-mode)
     (view-mode -1))
-  (visual-line-mode 1)
+  (if taut-truncate-lines
+      (progn
+        (setq-local truncate-lines t)
+        (visual-line-mode -1))
+    (setq-local truncate-lines nil)
+    (visual-line-mode 1))
   (add-hook 'post-command-hook #'taut-message--scroll-handler nil t))
 
 ;;;; Rendering Engine
@@ -1665,14 +1676,17 @@ Insert at point with premium faces and interactive links."
            (idx 1))
       (dolist (line show-lines)
         (insert margin-prefix)
-        (when show-line-numbers
-          (let* ((digit-width (length (number-to-string total-count)))
-                 (fmt-str (format "%%%dd │ " digit-width))
-                 (num-str (format fmt-str idx)))
-            (insert (propertize num-str 'face '(:foreground "#8a8a8a")))))
-        (let ((start-line (point)))
-          (insert line "\n")
-          (add-face-text-property start-line (point) code-face t))
+        (let ((wrap-prefix-str margin-prefix))
+          (when show-line-numbers
+            (let* ((digit-width (length (number-to-string total-count)))
+                   (fmt-str (format "%%%dd │ " digit-width))
+                   (num-str (format fmt-str idx)))
+              (insert (propertize num-str 'face '(:foreground "#8a8a8a")))
+              (setq wrap-prefix-str (concat margin-prefix (make-string (+ digit-width 3) ?\s)))))
+          (let ((start-line (point)))
+            (insert line "\n")
+            (add-face-text-property start-line (point) code-face t)
+            (put-text-property start-line (point) 'wrap-prefix wrap-prefix-str)))
         (setq idx (1+ idx)))
       (when (> hidden-count 0)
         (insert margin-prefix
