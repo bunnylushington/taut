@@ -64,6 +64,54 @@
       (should (equal (plist-get bob-meta :sender-name) "Bob Jones")) ; uses real name
       (should (equal (plist-get bob-meta :channel-name) "#development")))))
 
+(ert-deftest taut-cache-browser-build-metadata-index-sqlite-test ()
+  "Test that `taut-cache-browser--build-metadata-index' loads metadata from SQLite offline."
+  (skip-unless (taut-cache--available-p))
+  
+  (let* ((temp-db-file (make-temp-file "taut-cache-test-db-"))
+         (taut-cache-db-path temp-db-file)
+         (taut-cache--db nil))
+    (unwind-protect
+        (progn
+          ;; Populate the DB with test structures
+          (let ((user (make-taut-user :id "U_ALICE" :username "alice" :real-name "Alice Smith" :presence 'online :is-me t))
+                (chan (make-taut-channel :id "C_GENERAL" :name "general" :type 'public :unread-count 0))
+                (msg (make-taut-message
+                      :id "msg-db"
+                      :channel-id "C_GENERAL"
+                      :user-id "U_ALICE"
+                      :text "DB msg text"
+                      :ts "1688500010.0001"
+                      :files (list
+                              (list (cons 'name "db_file.png")
+                                    (cons 'url_private_download "https://files.slack.com/files/db_file.png"))))))
+            (taut-cache-save-user user)
+            (taut-cache-save-channel chan)
+            (taut-cache-save-message msg))
+          
+          ;; Ensure in-memory structures are completely clear (simulating fresh startup)
+          (setq taut-messages (make-hash-table :test 'equal))
+          (setq taut-threads (make-hash-table :test 'equal))
+          
+          ;; Build index
+          (let* ((index (taut-cache-browser--build-metadata-index))
+                 (url "https://files.slack.com/files/db_file.png")
+                 (hash (md5 url))
+                 (meta (gethash hash index)))
+            (should (hash-table-p index))
+            (should meta)
+            (should (equal (plist-get meta :original-name) "db_file.png"))
+            (should (equal (plist-get meta :sender-name) "Alice Smith"))
+            (should (equal (plist-get meta :channel-name) "#general"))
+            (should (equal (plist-get meta :message-ts) "1688500010.0001"))
+            (should (equal (plist-get meta :message-text) "DB msg text"))))
+      
+      ;; Cleanup connection and temporary file
+      (when (and taut-cache--db (sqlitep taut-cache--db))
+        (sqlite-close taut-cache--db))
+      (when (file-exists-p temp-db-file)
+        (delete-file temp-db-file)))))
+
 (ert-deftest taut-cache-browser-refresh-and-sort-test ()
   "Test the directory scanning, display names formatting, and custom sorting logic."
   (taut-initialize-mock-data)

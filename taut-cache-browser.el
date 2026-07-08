@@ -13,6 +13,8 @@
 (require 'tabulated-list)
 (require 'taut-model)
 (require 'taut-message)
+(require 'taut-cache)
+(require 'json)
 
 (defvar taut-cache-browser--metadata-index nil
   "Internal reverse-lookup mapping file hashes to message metadata.")
@@ -30,6 +32,52 @@ Keys are MD5 file hashes (without extension) and values are property lists with:
    :message-ts ts
    :message-text text)"
   (let ((index (make-hash-table :test 'equal)))
+    ;; 0. Query persistent SQLite cache if available
+    (let ((db (and (fboundp 'taut-cache--get-db) (taut-cache--get-db))))
+      (when db
+        (ignore-errors
+          (let ((user-names (make-hash-table :test 'equal))
+                (chan-names (make-hash-table :test 'equal)))
+            ;; Cache user ID to name mappings
+            (dolist (row (sqlite-select db "SELECT id, username, real_name FROM users"))
+              (let* ((id (nth 0 row))
+                     (uname (nth 1 row))
+                     (rname (nth 2 row))
+                     (display (or rname uname id)))
+                (puthash id display user-names)))
+            ;; Cache channel ID to name mappings
+            (dolist (row (sqlite-select db "SELECT id, name FROM channels"))
+              (let ((id (nth 0 row))
+                    (name (nth 1 row)))
+                (puthash id name chan-names)))
+            ;; Retrieve messages with files
+            (dolist (row (sqlite-select db "SELECT channel_id, user_id, text, ts, files_json FROM messages WHERE files_json IS NOT NULL AND files_json != ''"))
+              (let* ((chan-id (nth 0 row))
+                     (user-id (nth 1 row))
+                     (text (nth 2 row))
+                     (ts (nth 3 row))
+                     (files-json (nth 4 row))
+                     (chan-name (or (gethash chan-id chan-names) chan-id))
+                     (sender-name (or (gethash user-id user-names) user-id))
+                     (files (ignore-errors
+                              (let ((json-array-type 'list)
+                                    (json-object-type 'alist)
+                                    (json-key-type 'symbol))
+                                (json-read-from-string files-json)))))
+                (dolist (file files)
+                  (let* ((url (or (cdr (assoc 'url_private_download file))
+                                  (cdr (assoc 'url_private file))))
+                         (filename (cdr (assoc 'name file))))
+                    (when url
+                      (let ((hash (md5 url)))
+                        (puthash hash
+                                 (list :original-name filename
+                                       :sender-name sender-name
+                                       :channel-name (format "#%s" chan-name)
+                                       :message-ts ts
+                                       :message-text text)
+                                 index)))))))))))
+
     ;; 1. Scan in-memory channel messages
     (when (boundp 'taut-messages)
       (maphash
