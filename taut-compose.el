@@ -56,6 +56,7 @@
     (define-key map (kbd "C-c C-c") #'taut-compose-send)
     (define-key map (kbd "C-c C-k") #'taut-compose-abort)
     (define-key map (kbd "C-c C-b") #'taut-compose-insert-code-block)
+    (define-key map (kbd "C-c C-s") #'taut-compose-insert-shell-steps-skeleton)
     (define-key map (kbd "C-c C-a") #'taut-compose-from-atuin-history)
     (define-key map (kbd "C-c C-l") #'taut-compose-insert-link)
     (define-key map (kbd "C-c C-y") #'taut-compose-insert-reference)
@@ -249,8 +250,20 @@ in the `taut-compose-markup' property."
     (goto-char (+ start 3 (length lang) 1))))
 
 ;;;###autoload
+(defun taut-compose-insert-shell-steps-skeleton ()
+  "Insert the skeleton of a shell steps block into the compose buffer.
+The point lands right after the `# @taut-runnable` decoration on a new line,
+ready to write the first command."
+  (interactive)
+  (insert "```bash\n# @taut-runnable\n")
+  (let ((cmd-pos (point)))
+    (insert "\n```\n")
+    (goto-char cmd-pos)))
+
+;;;###autoload
 (defun taut-compose-from-atuin-history ()
-  "Interactively select shell commands from Atuin history and insert them as a runnable code block."
+  "Interactively select shell commands from Atuin history.
+Insert them as a runnable code block."
   (interactive)
   (let* ((atuin-bin (or (executable-find "atuin") "/opt/homebrew/bin/atuin"))
          (history-cmd (and (file-executable-p atuin-bin)
@@ -270,7 +283,13 @@ in the `taut-compose-markup' property."
           (let* ((prompt (if selected
                              (format "Select command [%d selected] (RET to finish): " (length selected))
                            "Select command from Atuin (RET to cancel): "))
-                 (choice (completing-read prompt candidates nil nil)))
+                 (choice (completing-read prompt
+                                          (lambda (string pred action)
+                                            (if (eq action 'metadata)
+                                                '(metadata (display-sort-function . identity)
+                                                           (cycle-sort-function . identity))
+                                              (complete-with-action action candidates string pred)))
+                                          nil nil)))
             (if (string-empty-p choice)
                 (setq done t)
               (push choice selected))))

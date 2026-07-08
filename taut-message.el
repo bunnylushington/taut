@@ -258,7 +258,14 @@
 (defun taut-message-open-shell-steps-panel ()
   "Open the interactive shell steps panel for the current block."
   (interactive)
-  (let ((cmds (get-text-property (point) 'taut-block-commands)))
+  (let ((cmds (or (get-text-property (point) 'taut-block-commands)
+                  (and (> (point) (point-min))
+                       (get-text-property (1- (point)) 'taut-block-commands))
+                  (let ((pos (point)))
+                    (or (let ((prev-change (previous-single-property-change pos 'taut-block-commands)))
+                          (and prev-change (get-text-property prev-change 'taut-block-commands)))
+                        (let ((next-change (next-single-property-change pos 'taut-block-commands)))
+                          (and next-change (get-text-property next-change 'taut-block-commands))))))))
     (if cmds
         (taut-shell-steps-open cmds)
       (message "No commands found for this block."))))
@@ -1765,7 +1772,10 @@ Insert at point with premium faces and interactive links."
     ;; Render bottom border
     (insert prefix "└" border-line "\n")
     (add-text-properties start-pos (point)
-                         (list 'rear-nonsticky t))))
+                         (list 'taut-block-commands clean-cmds
+                               'keymap taut-runnable-block-manage-map
+                               'help-echo "Click or press 'e'/'RET' to manage steps table"
+                               'rear-nonsticky t))))
 
 (defun taut-message--insert-code-block-rendered (lang code prefix &optional show-line-numbers)
   "Render a multi-line code block in LANG with content CODE."

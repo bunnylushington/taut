@@ -74,6 +74,8 @@
 (declare-function taut-compose-send "taut-compose")
 (declare-function taut-compose-abort "taut-compose")
 (declare-function taut-compose-insert-code-block "taut-compose")
+(declare-function taut-compose-insert-shell-steps-skeleton "taut-compose")
+(declare-function taut-compose-from-atuin-history "taut-compose")
 (declare-function taut-compose-insert-link "taut-compose")
 (declare-function taut-compose-insert-user-mention "taut-compose")
 (declare-function taut-compose-insert-reference "taut-compose")
@@ -198,6 +200,9 @@
     ("C-k" "Abort/Discard Draft"  taut-compose-abort)]
    ["Formatting Helpers"
     ("b" "Insert Code Block"     taut-compose-insert-code-block)
+    ("s" "Compose Shell Steps"   taut-compose-insert-shell-steps-skeleton)
+    ("a" "Compose from Atuin"    taut-compose-from-atuin-history
+     :if (lambda () (or (executable-find "atuin") (file-executable-p "/opt/homebrew/bin/atuin"))))
     ("l" "Insert Link"           taut-compose-insert-link)
     ("u" "Insert User Mention"   taut-compose-insert-user-mention)]])
 

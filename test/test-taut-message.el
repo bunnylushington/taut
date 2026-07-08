@@ -218,7 +218,7 @@
 (ert-deftest taut-message-runnable-block-rendering-test ()
   "Test that code blocks tagged with # @taut-runnable render interactively with executable text properties."
   (with-temp-buffer
-    (taut-message--insert-formatted-text "```bash\n# @taut-runnable\ngit status\njust test\n```")
+    (taut-message--insert-formatted-text "```bash\n# @taut-runnable\n# comment here\ngit status\njust test\n```")
     ;; Search for "git status" and "just test" and verify text properties
     (goto-char (point-min))
     (let ((git-pos (search-forward "git status" nil t)))
@@ -233,6 +233,24 @@
       (should just-pos)
       (let ((cmds (get-text-property (1- just-pos) 'taut-block-commands))
             (kmap (get-text-property (1- just-pos) 'keymap)))
+        (should (equal cmds '("git status" "just test")))
+        (should (eq kmap taut-runnable-block-manage-map))))
+
+    ;; Verify that the comment line has the same properties
+    (goto-char (point-min))
+    (let ((comment-pos (search-forward "# comment here" nil t)))
+      (should comment-pos)
+      (let ((cmds (get-text-property (1- comment-pos) 'taut-block-commands))
+            (kmap (get-text-property (1- comment-pos) 'keymap)))
+        (should (equal cmds '("git status" "just test")))
+        (should (eq kmap taut-runnable-block-manage-map))))
+
+    ;; Verify that the top border line has the same properties
+    (goto-char (point-min))
+    (let ((border-pos (search-forward "RUNNABLE SHELL STEPS" nil t)))
+      (should border-pos)
+      (let ((cmds (get-text-property (1- border-pos) 'taut-block-commands))
+            (kmap (get-text-property (1- border-pos) 'keymap)))
         (should (equal cmds '("git status" "just test")))
         (should (eq kmap taut-runnable-block-manage-map))))
 

@@ -118,7 +118,16 @@
       ;; Insert link
       (erase-buffer)
       (taut-compose-insert-link "https://google.com" "Google")
-      (should (equal (buffer-string) "<https://google.com|Google>")))))
+      (should (equal (buffer-string) "<https://google.com|Google>"))
+
+      ;; Insert shell steps skeleton
+      (erase-buffer)
+      (taut-compose-insert-shell-steps-skeleton)
+      (should (equal (buffer-string) "```bash\n# @taut-runnable\n\n```\n"))
+      (should (= (point) (progn
+                           (goto-char (point-min))
+                           (search-forward "# @taut-runnable\n")
+                           (point)))))))
 
 (ert-deftest taut-compose-insert-reference-test ()
   "Test inserting a reference from the ring into the compose buffer."
@@ -290,6 +299,32 @@
       ;; smile is standard, taut-emoji-translate translates it to emoji
       (should (string-match-p "  " (funcall annotation-fn ":smile:")))
       (should (equal (funcall annotation-fn ":super-custom-emoji:") "  [custom]")))))
+
+(ert-deftest taut-compose-from-atuin-history-test ()
+  "Test taut-compose-from-atuin-history."
+  ;; 1. Test when Atuin binary is not found / not executable
+  (cl-letf (((symbol-function 'executable-find) (lambda (_bin) nil))
+            ((symbol-function 'file-executable-p) (lambda (_path) nil)))
+    (with-temp-buffer
+      (taut-compose-mode)
+      (should-error (taut-compose-from-atuin-history) :type 'user-error)))
+
+  ;; 2. Test when Atuin binary is found and we complete some selections
+  (let ((prompt-count 0))
+    (cl-letf (((symbol-function 'executable-find) (lambda (_bin) "/usr/bin/atuin"))
+              ((symbol-function 'file-executable-p) (lambda (_path) t))
+              ((symbol-function 'shell-command-to-string) (lambda (_cmd) "ls -la\ngit status\nssh machine\n"))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _collection &optional _predicate _require-match _initial-input _hist _def _inherit-input-method)
+                 (setq prompt-count (1+ prompt-count))
+                 (cond
+                  ((= prompt-count 1) "git status")
+                  ((= prompt-count 2) "ls -la")
+                  (t "")))))
+      (with-temp-buffer
+        (taut-compose-mode)
+        (taut-compose-from-atuin-history)
+        (should (equal (buffer-string) "```bash\n# @taut-runnable\ngit status\nls -la\n```\n"))))))
 
 (provide 'test-taut-compose)
 ;;; test-taut-compose.el ends here
