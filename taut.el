@@ -711,5 +711,166 @@ If IS-PRIVATE is non-nil, the channel will be private."
         (error
          (message "Error fetching channel members: %s" (error-message-string err)))))))
 
+(defun taut--detect-language-for-mode (mode)
+  "Detect the language specifier string for major mode MODE."
+  (let* ((mode-str (symbol-name mode))
+         ;; Strip -mode suffix
+         (base-str (if (string-suffix-p "-mode" mode-str)
+                       (substring mode-str 0 -5)
+                     mode-str))
+         (base-sym (intern base-str))
+         ;; Search in alist
+         (match (cl-find-if (lambda (entry)
+                              (or (eq (cdr entry) base-sym)
+                                  (eq (cdr entry) mode)))
+                            taut-code-block-language-alist)))
+    (if match
+        (car match)
+      ;; Fallback to base-str if no match
+      base-str)))
+
+(defun taut-select-recipient (&optional prompt)
+  "Select a recipient (channel, group, or DM) using completion.
+Optional PROMPT specifies the completion prompt."
+  (let* ((channels (taut-model-get-channels-list))
+         (candidates nil))
+    (dolist (chan channels)
+      (let* ((chan-name (taut-channel-name chan))
+             (chan-id (taut-channel-id chan))
+             (chan-type (taut-channel-type chan))
+             (unreads (taut-channel-unread-count chan))
+             (mentions (taut-channel-mention-count chan))
+             (starred (taut-channel-is-starred chan))
+             ;; Indicators
+             (star-indicator (if starred "★ " "  "))
+             (type-indicator (cond
+                              ((eq chan-type 'dm)
+                               (let* ((user (taut-model-get-user-by-username chan-name))
+                                      (presence (and user (taut-user-presence user))))
+                                 (cond
+                                  ((eq presence 'online) "● ")
+                                  ((eq presence 'away)   "○ ")
+                                  (t                     "  "))))
+                              ((eq chan-type 'private) "🔒 ")
+                              (t "# ")))
+             ;; Badges
+             (badge (cond
+                     ((and mentions (> mentions 0)) (format " (%d mentions! ✉)" mentions))
+                     ((and unreads (> unreads 0)) (format " (%d unreads)" unreads))
+                     (t "")))
+             ;; Complete formatted string
+             (display-string (format "%s%s%s%s" star-indicator type-indicator chan-name badge)))
+        (push (cons display-string chan-id) candidates)))
+    (if (null candidates)
+        (error "Taut: No channels or DMs available")
+      (let* ((reversed-candidates (nreverse candidates))
+             (choice (completing-read (or prompt "Send to Channel/DM: ") reversed-candidates nil t))
+             (chan-id (cdr (assoc choice reversed-candidates))))
+        (unless chan-id
+          (error "Taut: Selection cancelled or invalid"))
+        chan-id))))
+
+;;;###autoload
+(defun taut-send-region (start end)
+  "Send the active region between START and END as a formatted code block.
+Prompts for a Slack channel, group, or DM recipient."
+  (interactive "r")
+  (let* ((code (buffer-substring-no-properties start end))
+         (lang (taut--detect-language-for-mode major-mode))
+         (chan-id (taut-select-recipient "Send region to Channel/DM: "))
+         (formatted-text (format "```%s\n%s\n```" lang code)))
+    (if (and (boundp 'taut-bot-token) taut-bot-token)
+        (taut-api-post-message chan-id formatted-text)
+      ;; Fallback to offline/mock
+      (let* ((ts (format "%d.0000" (time-convert nil 'integer)))
+             (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) formatted-text)))
+        (taut-model-add-message
+         (make-taut-message
+          :id (concat "msg_" ts)
+          :channel-id chan-id
+          :user-id taut-current-user-id
+          :text formatted-text
+          :ts ts
+          :thread-ts nil
+          :reply-count 0
+          :is-unread nil
+          :is-mention is-mention))))
+    ;; Refresh active buffers
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (or (eq major-mode 'taut-message-mode)
+                  (eq major-mode 'taut-thread-mode))
+          (if (eq major-mode 'taut-thread-mode)
+              (taut-thread-refresh)
+            (taut-message-refresh)))))
+    (message "Sent region as %s code block!" lang)))
+
+;;;###autoload
+(defun taut-send-buffer ()
+  "Send the current buffer as a file snippet to a chosen Slack recipient.
+Uses the current buffer contents (even if unsaved/dirty)."
+  (interactive)
+  (let* ((buf-name (buffer-name))
+         (sanitized-name (replace-regexp-in-string "[*?/\\]" "" buf-name))
+         (sanitized-name (if (string-empty-p sanitized-name) "buffer" sanitized-name))
+         (ext-raw (file-name-extension sanitized-name))
+         (ext (and ext-raw (downcase ext-raw)))
+         (prefix (if ext
+                     (substring sanitized-name 0 (- (length sanitized-name) (length ext) 1))
+                   sanitized-name))
+         (suffix (if ext (concat "." ext) ""))
+         (temp-file (make-temp-file (concat "taut-" prefix "-") nil suffix))
+         (chan-id (taut-select-recipient "Send buffer as file to Channel/DM: ")))
+    (unwind-protect
+        (progn
+          ;; Write the current state of the buffer to the temporary file
+          (let ((coding-system-for-write 'utf-8))
+            (write-region (point-min) (point-max) temp-file nil 'silent))
+          
+          (if (and (boundp 'taut-bot-token) taut-bot-token)
+              (taut-api-upload-file chan-id temp-file)
+            ;; Fallback to offline/mock
+            (let* ((ts (format "%d.0000" (time-convert nil 'integer)))
+                   (ts-id (format "%s-%04d" ts (random 10000)))
+                   (mock-url (format "https://files.slack.com/files-pri/mock-%s/download/%s" ts-id sanitized-name))
+                   (mimetype (cond
+                              ((member ext '("png" "jpg" "jpeg" "gif")) (format "image/%s" ext))
+                              ((member ext '("sh" "bash")) "text/x-sh")
+                              ((member ext '("el" "py" "js" "ts" "html" "css" "txt")) "text/plain")
+                              (t "text/plain")))
+                   ;; Construct files alist
+                   (mock-files `(((name . ,sanitized-name)
+                                  (mimetype . ,mimetype)
+                                  (url_private_download . ,mock-url))))
+                   (local-path (taut-media-file-path mock-url)))
+              ;; Copy temp file to local media cache so previews render instantly
+              (copy-file temp-file local-path t)
+              ;; Inject mock message
+              (taut-model-add-message
+               (make-taut-message
+                :id (concat "msg_" ts)
+                :channel-id chan-id
+                :user-id taut-current-user-id
+                :text (format "Shared a file: %s" sanitized-name)
+                :ts ts
+                :thread-ts nil
+                :reply-count 0
+                :is-unread nil
+                :is-mention nil
+                :files mock-files)))))
+      ;; Cleanup temp file
+      (when (file-exists-p temp-file)
+        (delete-file temp-file)))
+    
+    ;; Refresh active buffers
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (or (eq major-mode 'taut-message-mode)
+                  (eq major-mode 'taut-thread-mode))
+          (if (eq major-mode 'taut-thread-mode)
+              (taut-thread-refresh)
+            (taut-message-refresh)))))
+    (message "Sent buffer as file %s!" sanitized-name)))
+
 (provide 'taut)
 ;;; taut.el ends here
