@@ -215,6 +215,36 @@
       (should (string-match-p "HDISK2  0        ENABLED  SEL,OPT      FSCSI0" code))
       (should (string-match-p "hdisk2  1        Enabled  Non          fscsi0" code)))))
 
+(ert-deftest taut-message-runnable-block-rendering-test ()
+  "Test that code blocks tagged with # @taut-runnable render interactively with executable text properties."
+  (with-temp-buffer
+    (taut-message--insert-formatted-text "```bash\n# @taut-runnable\ngit status\njust test\n```")
+    ;; Search for "git status" and "just test" and verify text properties
+    (goto-char (point-min))
+    (let ((git-pos (search-forward "git status" nil t)))
+      (should git-pos)
+      (let ((cmd (get-text-property (1- git-pos) 'taut-shell-cmd))
+            (kmap (get-text-property (1- git-pos) 'keymap)))
+        (should (equal cmd "git status"))
+        (should (eq kmap taut-runnable-cmd-map))))
+    
+    (goto-char (point-min))
+    (let ((just-pos (search-forward "just test" nil t)))
+      (should just-pos)
+      (let ((cmd (get-text-property (1- just-pos) 'taut-shell-cmd))
+            (kmap (get-text-property (1- just-pos) 'keymap)))
+        (should (equal cmd "just test"))
+        (should (eq kmap taut-runnable-cmd-map))))
+
+    ;; Search for "[Run]" buttons and verify keymap
+    (goto-char (point-min))
+    (let ((run-pos (search-forward "[Run]" nil t)))
+      (should run-pos)
+      (let ((cmd (get-text-property (1- run-pos) 'taut-shell-cmd))
+            (kmap (get-text-property (1- run-pos) 'keymap)))
+        (should (equal cmd "git status"))
+        (should (eq kmap taut-runnable-cmd-run-map))))))
+
 (ert-deftest taut-message-code-block-toggle-line-numbers-test ()
   "Test dynamic line number toggling within rendered code blocks."
   (with-temp-buffer

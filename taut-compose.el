@@ -56,6 +56,7 @@
     (define-key map (kbd "C-c C-c") #'taut-compose-send)
     (define-key map (kbd "C-c C-k") #'taut-compose-abort)
     (define-key map (kbd "C-c C-b") #'taut-compose-insert-code-block)
+    (define-key map (kbd "C-c C-a") #'taut-compose-from-atuin-history)
     (define-key map (kbd "C-c C-l") #'taut-compose-insert-link)
     (define-key map (kbd "C-c C-y") #'taut-compose-insert-reference)
     (define-key map (kbd "C-c C-u") #'taut-compose-insert-user-mention)
@@ -246,6 +247,34 @@ in the `taut-compose-markup' property."
   (let ((start (point)))
     (insert "```" lang "\n\n```")
     (goto-char (+ start 3 (length lang) 1))))
+
+;;;###autoload
+(defun taut-compose-from-atuin-history ()
+  "Interactively select shell commands from Atuin history and insert them as a runnable code block."
+  (interactive)
+  (let* ((atuin-bin (or (executable-find "atuin") "/opt/homebrew/bin/atuin"))
+         (history-cmd (and (file-executable-p atuin-bin)
+                           (format "%s search --limit 500 --format \"{command}\"" atuin-bin))))
+    (if (not history-cmd)
+        (user-error "Taut: Atuin binary not found")
+      (let* ((history-str (shell-command-to-string history-cmd))
+             (candidates (delete-dups (split-string history-str "\n" t)))
+             (selected nil)
+             (done nil))
+        ;; Loop prompting for commands
+        (while (not done)
+          (let* ((prompt (if selected
+                             (format "Select command [%d selected] (RET to finish): " (length selected))
+                           "Select command from Atuin (RET to cancel): "))
+                 (choice (completing-read prompt candidates nil nil)))
+            (if (string-empty-p choice)
+                (setq done t)
+              (push choice selected))))
+        (when selected
+          (let ((block-str (concat "```bash\n# @taut-runnable\n"
+                                   (mapconcat 'identity (nreverse selected) "\n")
+                                   "\n```\n")))
+            (insert block-str)))))))
 
 ;;;###autoload
 (defun taut-compose-insert-link (url label)

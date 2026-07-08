@@ -228,6 +228,48 @@
                 (<= (length str) 15)
                 (string-match-p "^[a-zA-Z0-9+#_.-]+$" str)))))
 
+(defvar taut-runnable-cmd-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'taut-runnable-cmd-edit-and-run-at-point)
+    (define-key map [mouse-1] #'taut-runnable-cmd-edit-and-run-at-point)
+    (define-key map [mouse-2] #'taut-runnable-cmd-edit-and-run-at-point)
+    map)
+  "Keymap for clickable shell command text (Edit & Run).")
+
+(defvar taut-runnable-cmd-run-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'taut-runnable-cmd-run-at-point)
+    (define-key map [mouse-1] #'taut-runnable-cmd-run-at-point)
+    (define-key map [mouse-2] #'taut-runnable-cmd-run-at-point)
+    map)
+  "Keymap for clickable [Run] button.")
+
+(defun taut-runnable-cmd-execute (cmd)
+  "Execute CMD in a self-contained asynchronous subprocess managed by Taut."
+  (require 'compile)
+  (let ((compilation-buffer-name-function
+         (lambda (_mode) "*Taut Command Run*")))
+    (compile cmd t)))
+
+(defun taut-runnable-cmd-run-at-point ()
+  "Run the command under point direct."
+  (interactive)
+  (let ((cmd (get-text-property (point) 'taut-shell-cmd)))
+    (if cmd
+        (if (yes-or-no-p (format "Execute command: %s ? " cmd))
+            (taut-runnable-cmd-execute cmd))
+      (message "No command at point."))))
+
+(defun taut-runnable-cmd-edit-and-run-at-point ()
+  "Prompt to edit the command under point, then run it."
+  (interactive)
+  (let ((cmd (get-text-property (point) 'taut-shell-cmd)))
+    (if cmd
+        (let ((edited (read-string "Edit & Run command: " cmd)))
+          (unless (string-empty-p edited)
+            (taut-runnable-cmd-execute edited)))
+      (message "No command at point."))))
+
 (defvar taut-code-block-map (make-sparse-keymap)
   "Keymap active inside code blocks.")
 
@@ -1649,16 +1691,78 @@ Insert at point with premium faces and interactive links."
       (ignore-errors (font-lock-ensure))
       (buffer-string))))
 
+(defun taut-message--trim (string)
+  "Remove leading and trailing whitespace from STRING."
+  (if string
+      (replace-regexp-in-string "\\`[ \t\n\r]+" "" (replace-regexp-in-string "[ \t\n\r]+\\'" "" string))
+    ""))
+
+(defun taut-message--insert-runnable-block-rendered (lang code prefix)
+  "Render a multi-line runnable shell block with interactive buttons."
+  (let* ((lines (split-string code "\n" t))
+         ;; Filter out the tag line
+         (cmd-lines (cl-remove-if (lambda (l) (string-match-p "^# @taut-runnable" (taut-message--trim l))) lines))
+         (start-pos (point))
+         (width 50)
+         (border-line (make-string width ?─)))
+    
+    ;; Render top border with runnable label
+    (insert "\n" prefix "┌" border-line "\n")
+    (insert prefix "│  " (propertize "🚀 RUNNABLE SHELL STEPS - [Click/RET to edit & run]" 'face '(:weight bold :foreground "#ff8c00")) "\n")
+    (insert prefix "├" border-line "\n")
+    
+    ;; Insert each step as an interactive line
+    (let ((idx 1))
+      (dolist (cmd cmd-lines)
+        (let* ((is-comment (string-prefix-p "#" (taut-message--trim cmd)))
+               (display-cmd cmd))
+          (insert prefix "│  ")
+          (if is-comment
+              ;; Render comment line in nice gray italic font
+              (insert (propertize (format "   %s" display-cmd) 'face '(:slant italic :foreground "#8a8a8a")))
+            ;; Render executable step with button overlays
+            (let* ((step-num-str (format "[%d] " idx))
+                   (step-start (point)))
+              (insert (propertize step-num-str 'face '(:weight bold :foreground "#ff8c00")))
+              (let ((cmd-start (point)))
+                (insert display-cmd)
+                ;; Make the command text itself clickable to run it!
+                (add-text-properties cmd-start (point)
+                                     (list 'face 'taut-message-code
+                                           'mouse-face 'highlight
+                                           'help-echo "Click to Edit & Run this command"
+                                           'taut-shell-cmd display-cmd
+                                           'keymap taut-runnable-cmd-map)))
+              (insert "  ")
+              ;; Append a clean, clickable [Run] button next to it
+              (let ((btn-start (point)))
+                (insert "[Run]")
+                (add-text-properties btn-start (point)
+                                     (list 'face '(:weight bold :foreground "#00aa00")
+                                           'mouse-face 'highlight
+                                           'help-echo "Run this command direct"
+                                           'taut-shell-cmd display-cmd
+                                           'keymap taut-runnable-cmd-run-map)))
+              (setq idx (1+ idx))))
+          (insert "\n"))))
+    
+    ;; Render bottom border
+    (insert prefix "└" border-line "\n")
+    (add-text-properties start-pos (point)
+                         (list 'rear-nonsticky t))))
+
 (defun taut-message--insert-code-block-rendered (lang code prefix &optional show-line-numbers)
   "Render a multi-line code block in LANG with content CODE."
-  (let* ((lang (or lang "text"))
-         (code (or code ""))
-         (start-pos (point))
-         (border-char ?─)
-         (width 40)
-         (border-line (make-string width border-char))
-         (code-face 'taut-message-code)
-         (margin-prefix (concat prefix "│  ")))
+  (if (and code (string-match-p "^# @taut-runnable" (taut-message--trim code)))
+      (taut-message--insert-runnable-block-rendered lang code prefix)
+    (let* ((lang (or lang "text"))
+           (code (or code ""))
+           (start-pos (point))
+           (border-char ?─)
+           (width 40)
+           (border-line (make-string width border-char))
+           (code-face 'taut-message-code)
+           (margin-prefix (concat prefix "│  ")))
     
     ;; Render top border with language label
     (insert "\n" prefix "┌" border-line "\n")
@@ -1703,7 +1807,7 @@ Insert at point with premium faces and interactive links."
                                'taut-code-block-lang lang
                                'taut-code-block-show-line-numbers show-line-numbers
                                'keymap taut-code-block-map
-                               'rear-nonsticky t))))
+                               'rear-nonsticky t)))))
 
 (defun taut-message--insert-formatted-text (text &optional prefix)
   "Parse Slack formatting, including multi-line code blocks and inline formatting."
