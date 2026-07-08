@@ -1380,7 +1380,8 @@ If supported but not cached, triggers asynchronous download and returns nil."
   "Read the contents of PATH as a string cleanly, returning nil on error."
   (ignore-errors
     (with-temp-buffer
-      (insert-file-contents path)
+      (let ((coding-system-for-read 'utf-8))
+        (insert-file-contents path))
       (buffer-string))))
 
 (defun taut-message--insert-media-previews (msg prefix)
