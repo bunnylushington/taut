@@ -300,7 +300,7 @@ Supports DM, MENTION, THREAD-UPDATE (distinguishing channel vs DM threads), and 
           (propertize (concat " " (nerd-icons-octicon "nf-oct-mail" :face 'taut-inbox-type-dm) " DM ")
                       'face 'taut-inbox-type-dm))
          ((eq type 'mention)
-          (propertize (concat " " (nerd-icons-octicon "nf-oct-bell" :face 'taut-inbox-type-mention) " MENTION ")
+          (propertize (concat " " (nerd-icons-octicon "nf-oct-alert" :face 'taut-inbox-type-mention) " MENTION ")
                       'face 'taut-inbox-type-mention))
          (is-dm-thread
           (propertize (concat " " (nerd-icons-octicon "nf-oct-git_branch" :face 'taut-inbox-type-dm-thread) " DM-THREAD ")
@@ -320,7 +320,7 @@ Supports DM, MENTION, THREAD-UPDATE (distinguishing channel vs DM threads), and 
             (propertize (concat " " (all-the-icons-octicon "mail" :face 'taut-inbox-type-dm) " DM ")
                         'face 'taut-inbox-type-dm))
            ((eq type 'mention)
-            (propertize (concat " " (all-the-icons-octicon "bell" :face 'taut-inbox-type-mention) " MENTION ")
+            (propertize (concat " " (all-the-icons-octicon "alert" :face 'taut-inbox-type-mention) " MENTION ")
                         'face 'taut-inbox-type-mention))
            (is-dm-thread
             (propertize (concat " " (all-the-icons-octicon "git-branch" :face 'taut-inbox-type-dm-thread) " DM-THREAD ")

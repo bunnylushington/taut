@@ -288,7 +288,11 @@ Only active when `alert' is installed and available."
                       (ts (cdr (assoc 'ts event)))
                       (thread-ts (cdr (assoc 'thread_ts event)))
                       (files (cdr (assoc 'files event))))
-                 (taut-socket--notify-message chan-id user-id text)
+                 (condition-case err
+                     (taut-socket--notify-message chan-id user-id text)
+                   (error
+                    (message "Taut Socket: Notification error (non-fatal): %s"
+                             (error-message-string err))))
 
                  (when ts
                    (let ((is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
