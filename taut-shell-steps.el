@@ -59,6 +59,7 @@
     (define-key map "o" #'taut-shell-steps-move-down-at-point)
     (define-key map "j" #'next-line)
     (define-key map "k" #'previous-line)
+    (define-key map "g" #'taut-shell-steps-reset)
     (define-key map "R" #'taut-shell-steps-run-all)
     map)
   "Keymap for `taut-shell-steps-mode'.")
@@ -108,39 +109,28 @@
         (saved-point (point)))
     (erase-buffer)
     
-    ;; Header box
-    (let* ((width 90)
-           (border-line (make-string width ?─)))
-      (insert "┌" border-line "┐\n")
-      (insert "│ " (propertize "🚀 TAUT INTERACTIVE SHELL STEPS PANEL" 'face 'taut-shell-steps-header)
-              (make-string (max 0 (- width (string-width "🚀 TAUT INTERACTIVE SHELL STEPS PANEL") 1)) ?\s) "│\n")
-      (insert "├" border-line "┤\n")
-      
-      ;; Directory line
-      (let* ((dir-label "📂 Execution Directory: ")
-             (dir-path (abbreviate-file-name taut-shell-steps-directory))
-             (dir-str (concat dir-label dir-path))
-             (dir-btn " [Change] ")
-             (pad-len (- width (string-width dir-str) (string-width dir-btn) 1)))
-        (insert "│ " (propertize dir-label 'face '(:weight bold))
-                (propertize dir-path 'face '(:foreground "#3a86ff"))
-                (propertize dir-btn
-                            'face '(:weight bold :foreground "#ff8c00")
-                            'mouse-face 'highlight
-                            'help-echo "Click to change execution directory"
-                            'keymap (let ((m (make-sparse-keymap)))
-                                      (define-key m [mouse-1] #'taut-shell-steps-change-dir)
-                                      (define-key m (kbd "RET") #'taut-shell-steps-change-dir)
-                                      m))
-                (make-string (max 0 pad-len) ?\s) "│\n"))
-      
-      ;; Actions help line
-      (let* ((help-str "💡 [r/click] Run  [e] Edit  [a] Add  [d] Delete  [u/o] Move Up/Dn  [R] Run All  [q] Quit")
-             (pad-len (- width (string-width help-str) 1)))
-        (insert "│ " (propertize help-str 'face '(:slant italic :foreground "#8a8a8a"))
-                (make-string (max 0 pad-len) ?\s) "│\n"))
-      
-      (insert "└" border-line "┘\n\n"))
+    ;; Boxless Header with clean spacing
+    (insert (propertize "🚀 TAUT INTERACTIVE SHELL STEPS PANEL\n" 'face 'taut-shell-steps-header))
+    
+    ;; Directory line
+    (let* ((dir-label "📂 Execution Directory: ")
+           (dir-path (abbreviate-file-name taut-shell-steps-directory))
+           (dir-btn " [Change] "))
+      (insert (propertize dir-label 'face '(:weight bold))
+              (propertize dir-path 'face '(:foreground "#3a86ff"))
+              (propertize dir-btn
+                          'face '(:weight bold :foreground "#ff8c00")
+                          'mouse-face 'highlight
+                          'help-echo "Click to change execution directory"
+                          'keymap (let ((m (make-sparse-keymap)))
+                                    (define-key m [mouse-1] #'taut-shell-steps-change-dir)
+                                    (define-key m (kbd "RET") #'taut-shell-steps-change-dir)
+                                    m))
+              "\n"))
+    
+    ;; Actions help line
+    (let* ((help-str "💡 [r/click] Run  [e] Edit  [a] Add  [d] Delete  [u/o] Move Up/Dn  [g] Reset  [R] Run All  [q] Quit"))
+      (insert (propertize help-str 'face '(:slant italic :foreground "#8a8a8a")) "\n\n"))
     
     ;; Table Headers
     ;; Columns: No (5), Command (fill), Status (12), Action (22)
@@ -392,6 +382,16 @@
           (goto-char (point-min))
           (search-forward (format " [%d] " (1+ idx)) nil t)
           (message "Moved step %d down." idx))))))
+
+(defun taut-shell-steps-reset ()
+  "Reset the status of all steps to Pending."
+  (interactive)
+  (setq taut-shell-steps-data
+        (mapcar (lambda (s)
+                  (plist-put s :status "Pending"))
+                taut-shell-steps-data))
+  (taut-shell-steps-render)
+  (message "All steps reset to Pending."))
 
 (defun taut-shell-steps-change-dir ()
   "Prompt to change the execution directory."

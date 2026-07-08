@@ -74,5 +74,35 @@
 
           (kill-buffer buf))))))
 
+(ert-deftest taut-shell-steps-reset-test ()
+  "Test resetting all step statuses back to Pending."
+  (let ((cmds '("echo foo" "echo bar")))
+    (save-window-excursion
+      (taut-shell-steps-open cmds)
+      (let ((buf (get-buffer "*Taut Shell Steps*")))
+        (should buf)
+        (with-current-buffer buf
+          ;; Artificially set status of some steps
+          (setq taut-shell-steps-data
+                (mapcar (lambda (s)
+                          (if (= (plist-get s :idx) 1)
+                              (plist-put s :status "Success")
+                            (plist-put s :status "Failed")))
+                        taut-shell-steps-data))
+          (taut-shell-steps-render)
+          
+          ;; Verify statuses are updated
+          (should (equal (plist-get (car taut-shell-steps-data) :status) "Success"))
+          (should (equal (plist-get (cadr taut-shell-steps-data) :status) "Failed"))
+          
+          ;; Trigger reset
+          (taut-shell-steps-reset)
+          
+          ;; Verify they are all "Pending" now
+          (should (equal (plist-get (car taut-shell-steps-data) :status) "Pending"))
+          (should (equal (plist-get (cadr taut-shell-steps-data) :status) "Pending"))
+          
+          (kill-buffer buf))))))
+
 (provide 'test-taut-shell-steps)
 ;;; test-taut-shell-steps.el ends here
