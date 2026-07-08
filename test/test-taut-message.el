@@ -243,7 +243,16 @@
       (let ((cmd (get-text-property (1- run-pos) 'taut-shell-cmd))
             (kmap (get-text-property (1- run-pos) 'keymap)))
         (should (equal cmd "git status"))
-        (should (eq kmap taut-runnable-cmd-run-map))))))
+        (should (eq kmap taut-runnable-cmd-run-map))))
+
+    ;; Search for "[Manage Steps Table]" button and verify keymap & commands list
+    (goto-char (point-min))
+    (let ((manage-pos (search-forward "[Manage Steps Table]" nil t)))
+      (should manage-pos)
+      (let ((cmds (get-text-property (1- manage-pos) 'taut-block-commands))
+            (kmap (get-text-property (1- manage-pos) 'keymap)))
+        (should (equal cmds '("git status" "just test")))
+        (should (eq kmap taut-runnable-block-manage-map))))))
 
 (ert-deftest taut-message-code-block-toggle-line-numbers-test ()
   "Test dynamic line number toggling within rendered code blocks."

@@ -37,6 +37,7 @@
 (require 'taut-compose)
 (require 'taut-search)
 (require 'taut-cache-browser)
+(require 'taut-shell-steps)
 
 
 ;;;; Global Keybindings for Jumper

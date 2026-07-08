@@ -42,6 +42,7 @@
 (require 'taut-message)
 (require 'taut-thread)
 (require 'taut-transient)
+(require 'taut-shell-steps)
 (require 'taut)
 
 ;; Discover and load all test-*.el files in the test directory

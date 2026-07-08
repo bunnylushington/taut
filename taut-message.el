@@ -244,6 +244,24 @@
     map)
   "Keymap for clickable [Run] button.")
 
+(defvar taut-runnable-block-manage-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'taut-message-open-shell-steps-panel)
+    (define-key map [mouse-1] #'taut-message-open-shell-steps-panel)
+    (define-key map [mouse-2] #'taut-message-open-shell-steps-panel)
+    map)
+  "Keymap for the Manage Steps Table button.")
+
+(declare-function taut-shell-steps-open "taut-shell-steps" (commands &optional initial-dir))
+
+(defun taut-message-open-shell-steps-panel ()
+  "Open the interactive shell steps panel for the current block."
+  (interactive)
+  (let ((cmds (get-text-property (point) 'taut-block-commands)))
+    (if cmds
+        (taut-shell-steps-open cmds)
+      (message "No commands found for this block."))))
+
 (defun taut-runnable-cmd-execute (cmd)
   "Execute CMD in a self-contained asynchronous subprocess managed by Taut."
   (require 'compile)
@@ -1697,18 +1715,25 @@ Insert at point with premium faces and interactive links."
       (replace-regexp-in-string "\\`[ \t\n\r]+" "" (replace-regexp-in-string "[ \t\n\r]+\\'" "" string))
     ""))
 
-(defun taut-message--insert-runnable-block-rendered (lang code prefix)
+(defun taut-message--insert-runnable-block-rendered (_lang code prefix)
   "Render a multi-line runnable shell block with interactive buttons."
   (let* ((lines (split-string code "\n" t))
          ;; Filter out the tag line
          (cmd-lines (cl-remove-if (lambda (l) (string-match-p "^# @taut-runnable" (taut-message--trim l))) lines))
+         (clean-cmds (cl-remove-if (lambda (c) (or (string-empty-p (taut-message--trim c)) (string-prefix-p "#" (taut-message--trim c)))) cmd-lines))
          (start-pos (point))
          (width 50)
          (border-line (make-string width ?─)))
     
     ;; Render top border with runnable label
     (insert "\n" prefix "┌" border-line "\n")
-    (insert prefix "│  " (propertize "🚀 RUNNABLE SHELL STEPS - [Click/RET to edit & run]" 'face '(:weight bold :foreground "#ff8c00")) "\n")
+    (insert prefix "│  " (propertize "🚀 RUNNABLE SHELL STEPS" 'face '(:weight bold :foreground "#ff8c00"))
+            "  " (propertize "[Manage Steps Table]"
+                             'face '(:weight bold :foreground "#3a86ff")
+                             'mouse-face 'highlight
+                             'help-echo "Open full interactive steps panel with directory control"
+                             'taut-block-commands clean-cmds
+                             'keymap taut-runnable-block-manage-map) "\n")
     (insert prefix "├" border-line "\n")
     
     ;; Insert each step as an interactive line
@@ -1721,8 +1746,7 @@ Insert at point with premium faces and interactive links."
               ;; Render comment line in nice gray italic font
               (insert (propertize (format "   %s" display-cmd) 'face '(:slant italic :foreground "#8a8a8a")))
             ;; Render executable step with button overlays
-            (let* ((step-num-str (format "[%d] " idx))
-                   (step-start (point)))
+            (let* ((step-num-str (format "[%d] " idx)))
               (insert (propertize step-num-str 'face '(:weight bold :foreground "#ff8c00")))
               (let ((cmd-start (point)))
                 (insert display-cmd)
