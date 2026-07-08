@@ -218,13 +218,16 @@
       (let ((collection (nth 2 capf-res)))
         (should (member "#testchannel" collection)))))
 
+  (clrhash taut-custom-emojis)
+  (puthash "super-custom-emoji" "https://example.com/custom.png" taut-custom-emojis)
   (with-temp-buffer
     (taut-compose-mode)
     (insert ":")
     (let ((capf-res (taut-compose-capf)))
-    (should capf-res)
+      (should capf-res)
       (let ((collection (nth 2 capf-res)))
-        (should (member ":smile:" collection))))))
+        (should (member ":smile:" collection))
+        (should (member ":super-custom-emoji:" collection))))))
 
 (ert-deftest taut-compose-test-capf-exit-function ()
   "Test that the exit-function successfully applies Slack markup text properties."
@@ -276,6 +279,8 @@
       (should annotation-fn)
       (should (equal (funcall annotation-fn "#testchannel") "  [Channel topic]"))))
 
+  (clrhash taut-custom-emojis)
+  (puthash "super-custom-emoji" "https://example.com/custom.png" taut-custom-emojis)
   (with-temp-buffer
     (taut-compose-mode)
     (insert ":")
@@ -283,7 +288,8 @@
            (annotation-fn (plist-get (nthcdr 3 capf-res) :annotation-function)))
       (should annotation-fn)
       ;; smile is standard, taut-emoji-translate translates it to emoji
-      (should (string-match-p "  " (funcall annotation-fn ":smile:"))))))
+      (should (string-match-p "  " (funcall annotation-fn ":smile:")))
+      (should (equal (funcall annotation-fn ":super-custom-emoji:") "  [custom]")))))
 
 (provide 'test-taut-compose)
 ;;; test-taut-compose.el ends here

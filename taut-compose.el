@@ -444,7 +444,12 @@ is found, otherwise nil."
                          taut-channels)
                 candidates))
              ((eq type 'emoji)
-              (mapcar (lambda (e) (format ":%s:" e)) taut-compose-emoji-list)))))
+              (let (custom-list)
+                (maphash (lambda (name _)
+                           (push name custom-list))
+                         taut-custom-emojis)
+                (mapcar (lambda (e) (format ":%s:" e))
+                        (append taut-compose-emoji-list (sort custom-list #'string<))))))))
       
       (list start end collection
             :exit-function
@@ -509,10 +514,12 @@ is found, otherwise nil."
                     "")))
                ((eq type 'emoji)
                 (let* ((emoji-name (substring cand 1 (1- (length cand))))
-                       (emoji-char (taut-emoji-translate emoji-name)))
-                  (if emoji-char
-                      (format "  %s" emoji-char)
-                    "")))))))))
+                       (custom-url (gethash emoji-name taut-custom-emojis))
+                       (emoji-char (unless custom-url (taut-emoji-translate emoji-name))))
+                  (cond
+                   (custom-url "  [custom]")
+                   (emoji-char (format "  %s" emoji-char))
+                   (t ""))))))))))
 
 (provide 'taut-compose)
 ;;; taut-compose.el ends here
