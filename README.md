@@ -39,6 +39,7 @@ To read and post as your personal user, you must set **User Token Scopes** (NOT 
    - `channels:history` (View messages and other content in public channels)
    - `channels:write` (Create, archive, invite/kick members in public channels)
    - `channels:write.topic` (Set/edit topic for public channels)
+   - `emoji:read` (Required to fetch and display custom workspace emojis)
    - `groups:read` (View basic information about private channels)
    - `groups:history` (View messages and other content in private channels)
    - `groups:write` (Create, archive, invite/kick members in private channels/groups)
