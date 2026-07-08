@@ -1348,6 +1348,30 @@ If supported but not cached, triggers asynchronous download and returns nil."
      ((string= choice "Download file locally")
       (taut-message-download-file url name)))))
 
+(defun taut-message--text-file-p (name mimetype)
+  "Determine if file with NAME and MIMETYPE is a previewable text file."
+  (let ((mimetype (or mimetype ""))
+        (name (or name "")))
+    (or (string-prefix-p "text/" mimetype)
+        (member mimetype '("application/json"
+                           "application/javascript"
+                           "application/x-javascript"
+                           "application/xml"
+                           "application/x-sh"
+                           "application/x-shellscript"))
+        (let ((ext (file-name-extension name)))
+          (and ext
+               (member (downcase ext)
+                       '("txt" "sh" "py" "json" "el" "md" "js" "ts" "html" "css"
+                         "yml" "yaml" "xml" "csv" "log" "conf" "ini" "patch" "diff" "org")))))))
+
+(defun taut-message--read-file-string (path)
+  "Read the contents of PATH as a string cleanly, returning nil on error."
+  (ignore-errors
+    (with-temp-buffer
+      (insert-file-contents path)
+      (buffer-string))))
+
 (defun taut-message--insert-media-previews (msg prefix)
   "Render and insert previews for any media attachments in MSG.
 Uses PREFIX for left indentation."
@@ -1357,7 +1381,8 @@ Uses PREFIX for left indentation."
              (mimetype (or (cdr (assoc 'mimetype f)) ""))
              (url (taut-api-normalize-download-url
                    (or (cdr (assoc 'url_private_download f)) (cdr (assoc 'url_private f)) "")))
-             (is-image (string-prefix-p "image/" mimetype)))
+             (is-image (string-prefix-p "image/" mimetype))
+             (is-text (taut-message--text-file-p name mimetype)))
         (cond
          ((and is-image (display-images-p) taut-display-images-inline)
           (if (and url (not (string-blank-p url)))
@@ -1394,20 +1419,16 @@ Uses PREFIX for left indentation."
                   (taut-media-download-async url local-path (current-buffer))
                   (insert prefix (propertize (format "⏳ [Loading image: %s...]\n" name) 'face 'font-lock-comment-face))))))
          
-         ;; Non-image files, or image in non-graphic display / disabled
-         (t
-          (when (and url (not (string-blank-p url)))
-            (let* ((local-path (taut-media-file-path url))
-                   (keymap (let ((map (make-sparse-keymap)))
-                             (define-key map (kbd "RET") (lambda () (interactive) (taut-media-handle-interaction url name local-path)))
-                             (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (taut-media-handle-interaction url name local-path)))
-                             map)))
-              (insert prefix
-                      (propertize (format "📎 %s [%s] (Click/RET to open)\n" name (if (and is-image (not taut-display-images-inline)) "Image" "File"))
-                                  'face 'taut-message-link
-                                  'mouse-face 'highlight
-                                  'help-echo "Click/RET to open action menu"
-                                  'keymap keymap))))))))))
+         ((and is-text (not (string-blank-p url)))
+          (let* ((local-path (taut-media-file-path url)))
+            (if (file-exists-p local-path)
+                (let ((content (taut-message--read-file-string local-path))
+                      (ext (file-name-extension name)))
+                  (when content
+                    (taut-message--insert-code-block-rendered (or ext "text") content prefix)))
+              ;; Text file does not exist locally yet, trigger async download
+              (taut-media-download-async url local-path (current-buffer))
+              (insert prefix (propertize (format "⏳ [Loading preview: %s...]\n" name) 'face 'font-lock-comment-face))))))))))
 
 (defun taut-message--format-reaction-emoji (emoji)
   "Format reaction EMOJI.

@@ -466,15 +466,15 @@ line8
           (should (search-forward "alice" nil t)))))))
 
 (ert-deftest taut-message-media-previews-rendering-test ()
-  "Test inline media and image previews rendering."
+  "Test inline media, image, and text document previews rendering."
   (taut-model-clear-all)
   (let* ((user (make-taut-user :id "U1" :username "alice"))
          (files-list '(((name . "screenshot.png")
                         (mimetype . "image/png")
                         (url_private_download . "https://files.slack.com/files-pri/T01-F12/download/screenshot.png"))
-                       ((name . "document.pdf")
-                        (mimetype . "application/pdf")
-                        (url_private_download . "https://files.slack.com/files-pri/T01-F34/download/document.pdf"))))
+                       ((name . "bootstrap.sh")
+                        (mimetype . "text/x-sh")
+                        (url_private_download . "https://files.slack.com/files-pri/T01-F34/download/bootstrap.sh"))))
          (msg (make-taut-message :ts "1688500000.111"
                                  :text "Check this file"
                                  :channel-id "C1"
@@ -484,7 +484,8 @@ line8
     
     (cl-letf (((symbol-function 'display-images-p) (lambda () t))
               ((symbol-function 'create-image) (lambda (&rest _args) 'mock-attachment-image))
-              ((symbol-function 'file-exists-p) (lambda (&rest _args) t)))
+              ((symbol-function 'file-exists-p) (lambda (&rest _args) t))
+              ((symbol-function 'taut-message--read-file-string) (lambda (&rest _args) "echo \"hello world\"")))
       
       ;; 1. With taut-display-images-inline = t
       (let ((taut-display-images-inline t))
@@ -503,11 +504,14 @@ line8
                   (setq found t)
                 (forward-char 1)))
             (should found))
-          ;; Verify document file fallback text link
+          ;; Verify inline text file preview is rendered inside code block
           (goto-char (point-min))
-          (should (search-forward "📎 document.pdf [File] (Click/RET to open)" nil t))))
+          (should (search-forward "echo \"hello world\"" nil t))
+          ;; Verify old redundant document fallback link is NOT present
+          (goto-char (point-min))
+          (should-not (search-forward "📎 bootstrap.sh [File] (Click/RET to open)" nil t))))
           
-      ;; 2. With taut-display-images-inline = nil (fallback to link for images as well)
+      ;; 2. With taut-display-images-inline = nil (images and non-text files don't render previews)
       (let ((taut-display-images-inline nil))
         (with-temp-buffer
           (taut-message--render-message-line msg)
@@ -520,12 +524,9 @@ line8
                   (setq found t)
                 (forward-char 1)))
             (should-not found))
-          ;; Verify image is fallback link
+          ;; Verify no old image/file fallback links are appended in preview block (as they are in main body now)
           (goto-char (point-min))
-          (should (search-forward "📎 screenshot.png [Image] (Click/RET to open)" nil t))
-          ;; Verify document is fallback link
-          (goto-char (point-min))
-          (should (search-forward "📎 document.pdf [File] (Click/RET to open)" nil t)))))))
+          (should-not (search-forward "📎 screenshot.png [Image] (Click/RET to open)" nil t)))))))
 
 (ert-deftest taut-message-real-name-rendering-test ()
   "Test rendering of user real names instead of usernames in chat and inline replies."
