@@ -118,7 +118,11 @@
           
           ;; If app token is configured, establish Socket Mode WebSocket connection
           (when taut-app-token
-            (ignore-errors (taut-socket-connect)))
+            (condition-case err
+                (taut-socket-connect)
+              (error
+               (message "Taut: Socket connection failed (will retry): %s"
+                        (error-message-string err)))))
           
           ;; Split and display layout (if not already displayed)
           (unless has-cache
