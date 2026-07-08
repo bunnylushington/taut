@@ -152,5 +152,138 @@
         (taut-compose-insert-reference)
         (should (equal (buffer-string) "https://T_MY_TEAM.slack.com/archives/C_DEV/p16884600000001"))))))
 
+(ert-deftest taut-compose-test-bounds-user ()
+  "Test parsing of user mentions bounds."
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "hello @al")
+    (let ((bounds (taut-compose--capf-bounds)))
+      (should bounds)
+      (should (eq (plist-get bounds :type) 'user))
+      (should (= (plist-get bounds :start) 7))
+      (should (= (plist-get bounds :end) 10)))))
+
+(ert-deftest taut-compose-test-bounds-channel ()
+  "Test parsing of channel bounds."
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "check #gen")
+    (let ((bounds (taut-compose--capf-bounds)))
+      (should bounds)
+      (should (eq (plist-get bounds :type) 'channel))
+      (should (= (plist-get bounds :start) 7))
+      (should (= (plist-get bounds :end) 11)))))
+
+(ert-deftest taut-compose-test-bounds-emoji ()
+  "Test parsing of emoji bounds."
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "feeling :smi")
+    (let ((bounds (taut-compose--capf-bounds)))
+      (should bounds)
+      (should (eq (plist-get bounds :type) 'emoji))
+      (should (= (plist-get bounds :start) 9))
+      (should (= (plist-get bounds :end) 13)))))
+
+(ert-deftest taut-compose-test-bounds-invalid ()
+  "Test that spaces or invalid prefix triggers are not completed."
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "hello @ alice")
+    (should-not (taut-compose--capf-bounds)))
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "email@domain")
+    (should-not (taut-compose--capf-bounds))))
+
+(ert-deftest taut-compose-test-capf-candidates ()
+  "Test that Capf returns correct collection of candidates."
+  (taut-model-clear-all)
+  (taut-model-add-user (make-taut-user :id "U_TEST" :username "testuser" :real-name "Test User"))
+  (taut-model-add-channel (make-taut-channel :id "C_TEST" :name "testchannel" :type 'public))
+  
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "@")
+    (let ((capf-res (taut-compose-capf)))
+      (should capf-res)
+      (let ((collection (nth 2 capf-res)))
+        (should (member "@testuser" collection)))))
+  
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "#")
+    (let ((capf-res (taut-compose-capf)))
+      (should capf-res)
+      (let ((collection (nth 2 capf-res)))
+        (should (member "#testchannel" collection)))))
+
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert ":")
+    (let ((capf-res (taut-compose-capf)))
+    (should capf-res)
+      (let ((collection (nth 2 capf-res)))
+        (should (member ":smile:" collection))))))
+
+(ert-deftest taut-compose-test-capf-exit-function ()
+  "Test that the exit-function successfully applies Slack markup text properties."
+  (taut-model-clear-all)
+  (taut-model-add-user (make-taut-user :id "U_TEST" :username "testuser" :real-name "Test User"))
+  (taut-model-add-channel (make-taut-channel :id "C_TEST" :name "testchannel" :type 'public))
+  
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "@testuser")
+    (let* ((capf-res (taut-compose-capf))
+           (exit-fn (plist-get (nthcdr 3 capf-res) :exit-function)))
+      (should exit-fn)
+      (funcall exit-fn "@testuser" 'finished)
+      (should (equal (buffer-string) "@testuser"))
+      (should (equal (get-text-property 1 'taut-compose-markup) "<@U_TEST|testuser>"))
+      (should (equal (taut-compose--get-text-with-markup) "<@U_TEST|testuser>"))))
+
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "#testchannel")
+    (let* ((capf-res (taut-compose-capf))
+           (exit-fn (plist-get (nthcdr 3 capf-res) :exit-function)))
+      (should exit-fn)
+      (funcall exit-fn "#testchannel" 'finished)
+      (should (equal (buffer-string) "#testchannel"))
+      (should (equal (get-text-property 1 'taut-compose-markup) "<#C_TEST|testchannel>"))
+      (should (equal (taut-compose--get-text-with-markup) "<#C_TEST|testchannel>")))))
+
+(ert-deftest taut-compose-test-annotations ()
+  "Test Corfu annotation support in Capf."
+  (taut-model-clear-all)
+  (taut-model-add-user (make-taut-user :id "U_TEST" :username "testuser" :real-name "Test User"))
+  (taut-model-add-channel (make-taut-channel :id "C_TEST" :name "testchannel" :type 'public :topic "Channel topic"))
+  
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "@")
+    (let* ((capf-res (taut-compose-capf))
+           (annotation-fn (plist-get (nthcdr 3 capf-res) :annotation-function)))
+      (should annotation-fn)
+      (should (equal (funcall annotation-fn "@testuser") "  (Test User)"))))
+
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert "#")
+    (let* ((capf-res (taut-compose-capf))
+           (annotation-fn (plist-get (nthcdr 3 capf-res) :annotation-function)))
+      (should annotation-fn)
+      (should (equal (funcall annotation-fn "#testchannel") "  [Channel topic]"))))
+
+  (with-temp-buffer
+    (taut-compose-mode)
+    (insert ":")
+    (let* ((capf-res (taut-compose-capf))
+           (annotation-fn (plist-get (nthcdr 3 capf-res) :annotation-function)))
+      (should annotation-fn)
+      ;; smile is standard, taut-emoji-translate translates it to emoji
+      (should (string-match-p "  " (funcall annotation-fn ":smile:"))))))
+
 (provide 'test-taut-compose)
 ;;; test-taut-compose.el ends here

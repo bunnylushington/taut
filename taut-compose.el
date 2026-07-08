@@ -19,10 +19,24 @@
 (declare-function taut-thread-refresh "taut-thread")
 (declare-function taut-compose-dispatch "taut-transient")
 (declare-function taut-emoticon-translate-string "taut-message")
+(declare-function taut-emoji-translate "taut-message")
 
 (defvar taut-current-thread-ts)
 (defvar taut-current-user-id)
 (defvar taut-emoticon-alist)
+
+(defgroup taut-compose nil
+  "Message composition options for Taut."
+  :group 'taut)
+
+(defcustom taut-compose-emoji-list
+  '("smile" "thumbsup" "heart" "tada" "fire" "rocket" "eyes" "thinking_face"
+    "checkmark" "rolling_on_the_floor_laughing" "heavy_check_mark" "x"
+    "raised_hands" "pray" "clap" "bow" "muscle" "metal" "star" "gift" "party-parrot"
+    "cry" "scream" "laughing" "sob" "cold_sweat" "sweat_smile" "wink" "shrug" "facepalm")
+  "A list of common Slack emoji names (without colons) for completion."
+  :type '(list string)
+  :group 'taut-compose)
 
 ;;;; Buffer-Local Variables
 
@@ -69,11 +83,21 @@
                                 name))))
   (setq word-wrap t)
   (visual-line-mode 1)
-  (add-hook 'post-self-insert-hook #'taut-compose--post-self-insert nil t))
+  (add-hook 'post-self-insert-hook #'taut-compose--post-self-insert nil t)
+  ;; Register our custom Completion-At-Point Function (Capf)
+  (add-hook 'completion-at-point-functions #'taut-compose-capf nil t)
+  ;; Ensure Corfu manages completions if present
+  (when (fboundp 'corfu-mode)
+    (corfu-mode 1))
+  ;; Enable spelling checking if flyspell-mode is available
+  (when (fboundp 'flyspell-mode)
+    (flyspell-mode 1)))
 
 (defun taut-compose--post-self-insert ()
-  "Translate emoticons to emojis as the user types in the compose buffer."
-  (let ((pos (point)))
+  "Translate emoticons to emojis.
+Trigger completion for @, #, and : as the user types."
+  (let ((pos (point))
+        (last-char (char-before)))
     (save-excursion
       (let ((found nil)
             (limit (max (point-min) (- pos 5))))
@@ -96,7 +120,10 @@
                                                      (and (>= char-before ?0) (<= char-before ?9)))))))
                               (setq found (cdr match))
                               (delete-region start pos)
-                              (insert found)))))))))))
+                              (insert found)))))))))
+    ;; Trigger autocomplete dynamically on prefix characters
+    (when (memq last-char '(?@ ?# ?:))
+      (completion-at-point))))
 
 ;;;; Core Composer Operations
 
@@ -138,12 +165,28 @@ EDIT-TS and EDIT-TEXT are used for editing an existing message."
     (pop-to-buffer buf action)
     (goto-char (point-max))))
 
+(defun taut-compose--get-text-with-markup ()
+  "Retrieve the buffer contents.
+Replace displayed mentions/channels with their underlying Slack markup stored
+in the `taut-compose-markup' property."
+  (let ((chunks nil)
+        (pos (point-min))
+        next-pos)
+    (while (< pos (point-max))
+      (setq next-pos (next-single-property-change pos 'taut-compose-markup nil (point-max)))
+      (let ((markup (get-text-property pos 'taut-compose-markup)))
+        (if markup
+            (push markup chunks)
+          (push (buffer-substring-no-properties pos next-pos) chunks)))
+      (setq pos next-pos))
+    (apply #'concat (nreverse chunks))))
+
 ;;;###autoload
 (defun taut-compose-send ()
   "Send the composed message to Slack or update an existing message."
   (interactive)
   ;; Translate any remaining emoticons (e.g. pasted or typed fast) before sending
-  (let* ((text (buffer-substring-no-properties (point-min) (point-max)))
+  (let* ((text (taut-compose--get-text-with-markup))
          (translated-text (taut-emoticon-translate-string text))
          (chan-id taut-compose-channel-id)
          (thread-ts taut-compose-thread-ts)
@@ -232,7 +275,11 @@ Mentions are formatted as <@U_ID|username>."
              (user (gethash uid taut-users))
              (username (and user (taut-user-username user))))
         (when uid
-          (insert (format "<@%s|%s>" uid (or username uid))))))))
+          (let ((disp (format "@%s" (or username uid))))
+            (insert (propertize disp
+                                'face 'taut-message-mention
+                                'taut-compose-markup (format "<@%s|%s>" uid (or username uid))
+                                'rear-nonsticky t))))))))
 
 ;;;###autoload
 (defun taut-compose-insert-reference ()
@@ -341,6 +388,131 @@ If QUOTE-P is non-nil, quote the message under point."
 
     ;; Open composer
     (taut-compose-open chan-id thread-ts (when quote-p msg))))
+
+;;;; Capf Core Engine
+
+(defun taut-compose--capf-bounds ()
+  "Scan backward from point to find a valid completion prefix.
+Returns a plist with keys :type, :start, and :end if a valid prefix
+is found, otherwise nil."
+  (save-excursion
+    (let ((limit (line-beginning-position))
+          (pos (point))
+          found)
+      ;; Search backward for @, #, or :
+      (while (and (> pos limit) (not found))
+        (setq pos (1- pos))
+        (let ((char (char-after pos)))
+          (cond
+           ;; Check if it's one of our triggers
+           ((memq char '(?@ ?# ?:))
+            ;; Ensure it is preceded by beginning-of-line, whitespace, or punctuation
+            (let ((pre-char (if (= pos limit) nil (char-before pos))))
+              (if (or (null pre-char)
+                      (memq pre-char '(?\s ?\t ?\n ?\( ?\[ ?\{ ?\" ?\' ?< ?, ?. ?? ?! ?\; ?: ?-)))
+                  ;; Ensure no whitespace exists between trigger and point
+                  (let ((text-between (buffer-substring-no-properties (1+ pos) (point))))
+                    (unless (string-match-p "[[:space:]]" text-between)
+                      (setq found
+                            (list :type (cond
+                                         ((eq char ?@) 'user)
+                                         ((eq char ?#) 'channel)
+                                         ((eq char ?:) 'emoji))
+                                  :start pos
+                                  :end (point)))))))))))
+      found)))
+
+(defun taut-compose-capf ()
+  "Completion at point function for Taut message composer."
+  (when-let ((bounds (taut-compose--capf-bounds)))
+    (let* ((type (plist-get bounds :type))
+           (start (plist-get bounds :start))
+           (end (plist-get bounds :end))
+           (collection
+            (cond
+             ((eq type 'user)
+              (let (candidates)
+                (maphash (lambda (_id u)
+                           (push (concat "@" (taut-user-username u)) candidates))
+                         taut-users)
+                candidates))
+             ((eq type 'channel)
+              (let (candidates)
+                (maphash (lambda (_id c)
+                           (unless (eq (taut-channel-type c) 'dm)
+                             (push (concat "#" (taut-channel-name c)) candidates)))
+                         taut-channels)
+                candidates))
+             ((eq type 'emoji)
+              (mapcar (lambda (e) (format ":%s:" e)) taut-compose-emoji-list)))))
+      
+      (list start end collection
+            :exit-function
+            (lambda (str status)
+              (when (memq status '(finished sole exact))
+                (let ((end-pos nil))
+                  (save-excursion
+                    (goto-char start)
+                    (when (looking-at (regexp-quote str))
+                      (let ((inhibit-read-only t))
+                        (delete-region start (match-end 0))
+                        (cond
+                         ((eq type 'user)
+                          (let* ((username (substring str 1))
+                                 (uid nil))
+                            (maphash (lambda (id u)
+                                       (when (equal (taut-user-username u) username)
+                                         (setq uid id)))
+                                     taut-users)
+                            (if uid
+                                (insert (propertize str
+                                                    'face 'taut-message-mention
+                                                    'taut-compose-markup (format "<@%s|%s>" uid username)
+                                                    'rear-nonsticky t))
+                              (insert str))))
+                         ((eq type 'channel)
+                          (let* ((chan-name (substring str 1))
+                                 (cid nil))
+                            (maphash (lambda (id c)
+                                       (when (equal (taut-channel-name c) chan-name)
+                                         (setq cid id)))
+                                     taut-channels)
+                            (if cid
+                                (insert (propertize str
+                                                    'face 'taut-message-mention
+                                                    'taut-compose-markup (format "<#%s|%s>" cid chan-name)
+                                                    'rear-nonsticky t))
+                              (insert str))))
+                         ((eq type 'emoji)
+                          (insert str)))
+                        (setq end-pos (point)))))
+                  (when end-pos
+                    (goto-char end-pos)))))
+            :annotation-function
+            (lambda (cand)
+              (cond
+               ((eq type 'user)
+                (let* ((username (substring cand 1))
+                       (user (cl-loop for u being hash-values of taut-users
+                                      when (equal (taut-user-username u) username)
+                                      return u)))
+                  (if (and user (taut-user-real-name user))
+                      (format "  (%s)" (taut-user-real-name user))
+                    "")))
+               ((eq type 'channel)
+                (let* ((chan-name (substring cand 1))
+                       (chan (cl-loop for c being hash-values of taut-channels
+                                      when (equal (taut-channel-name c) chan-name)
+                                      return c)))
+                  (if (and chan (taut-channel-topic chan))
+                      (format "  [%s]" (taut-channel-topic chan))
+                    "")))
+               ((eq type 'emoji)
+                (let* ((emoji-name (substring cand 1 (1- (length cand))))
+                       (emoji-char (taut-emoji-translate emoji-name)))
+                  (if emoji-char
+                      (format "  %s" emoji-char)
+                    "")))))))))
 
 (provide 'taut-compose)
 ;;; taut-compose.el ends here
