@@ -170,6 +170,50 @@
   :type 'integer
   :group 'taut)
 
+(defcustom taut-display-images-inline t
+  "If non-nil and Emacs supports it, display image attachments inline."
+  :type 'boolean
+  :group 'taut)
+
+(defcustom taut-display-avatars-inline t
+  "If non-nil and Emacs supports it, display user avatars inline."
+  :type 'boolean
+  :group 'taut)
+
+(defcustom taut-image-max-width 400
+  "Maximum width in pixels for inline message images."
+  :type 'integer
+  :group 'taut)
+
+(defcustom taut-image-max-height 300
+  "Maximum height in pixels for inline message images."
+  :type 'integer
+  :group 'taut)
+
+(defcustom taut-avatar-size 24
+  "Size in pixels (width and height) for user avatars."
+  :type 'integer
+  :group 'taut)
+
+(defcustom taut-media-cache-dir
+  (expand-file-name "taut/cache/media/" user-emacs-directory)
+  "Directory where downloaded media attachments and avatars are cached."
+  :type 'directory
+  :group 'taut)
+
+;;;###autoload
+(defun taut-clear-media-cache ()
+  "Delete all cached media attachments and avatars."
+  (interactive)
+  (when (and taut-media-cache-dir (file-directory-p taut-media-cache-dir))
+    (if (yes-or-no-p "Are you sure you want to clear the Taut media cache? ")
+        (progn
+          (delete-directory taut-media-cache-dir t t)
+          (message "Taut: Media cache cleared successfully."))
+      (message "Taut: Clear cache cancelled."))))
+
+
+
 (defun taut-message--valid-lang-p (str)
   "Return t if STR is a valid programming language identifier."
   (and str
@@ -539,10 +583,24 @@ Edits made in this buffer can be committed back to the chat using \\[taut-code-b
          (browser-url (or (get-text-property (point) 'taut-file-browser-url) url)))
     (if (not url)
         (message "No file link under point.")
-      (let* ((choices '("Download file locally" "Open in Browser"))
+      (let* ((choices '("Open in Emacs" "Download file locally" "Open in Browser"))
              (choice (completing-read (format "Action for %s: " (or name "file"))
                                       choices nil t)))
         (cond
+         ((string= choice "Open in Emacs")
+          (let ((local-path (taut-media-file-path url)))
+            (unless (file-exists-p local-path)
+              (message "Taut: Downloading file to media cache...")
+              (ignore-errors
+                (make-directory (file-name-directory local-path) t)
+                (taut-api-download-file url local-path)))
+            (if (file-exists-p local-path)
+                (let ((buf (find-file-noselect local-path)))
+                  (with-current-buffer buf
+                    (rename-buffer (format "*Taut File: %s*" name) t)
+                    (setq buffer-read-only t))
+                  (switch-to-buffer buf))
+              (message "Taut: Failed to retrieve file."))))
          ((string= choice "Download file locally")
           (taut-message-download-file url name))
          ((string= choice "Open in Browser")
@@ -832,7 +890,12 @@ history from API first."
          (user (taut-model-get-user (taut-message-user-id msg)))
          (is-me (and user (equal (taut-user-id user) taut-current-user-id)))
          (user-face (if is-me 'taut-message-me 'taut-message-username))
-         (username (if user (or (taut-user-username user) "unknown") "unknown"))
+         (username (if user
+                       (let ((real-name (taut-user-real-name user)))
+                         (if (and real-name (not (string= real-name "")))
+                             real-name
+                           (or (taut-user-username user) "unknown")))
+                     "unknown"))
          (user-part (propertize username 'face user-face))
          (time-str (taut-message--format-ts (taut-message-ts msg)))
          (time-part (propertize time-str 'face 'taut-message-timestamp))
@@ -840,6 +903,9 @@ history from API first."
          (is-active-thread (and active-thread-ts (equal active-thread-ts (taut-message-ts msg)))))
 
     ;; Header line: Username  [12:34]
+    (let ((avatar (taut-user-get-avatar-image user)))
+      (when avatar
+        (insert (propertize " " 'display avatar) " ")))
     (insert user-part "  " time-part)
     (when (taut-message-is-starred msg)
       (insert " " (propertize "⭐" 'face 'taut-message-star)))
@@ -851,6 +917,9 @@ history from API first."
         (taut-message--insert-huddle-box (taut-message-text msg) "         ")
       (taut-message--insert-formatted-text (taut-message-text msg) "         "))
     (insert "\n")
+
+    ;; Media attachments/previews
+    (taut-message--insert-media-previews msg "         ")
 
     ;; Reactions display (if any)
     (when (taut-message-reactions msg)
@@ -923,19 +992,31 @@ ROOT-TS is the timestamp of the parent message."
          (user (taut-model-get-user (taut-message-user-id reply)))
          (is-me (and user (equal (taut-user-id user) taut-current-user-id)))
          (user-face (if is-me 'taut-message-me 'taut-message-username))
-         (username (if user (or (taut-user-username user) "unknown") "unknown"))
+         (username (if user
+                       (let ((real-name (taut-user-real-name user)))
+                         (if (and real-name (not (string= real-name "")))
+                             real-name
+                           (or (taut-user-username user) "unknown")))
+                     "unknown"))
          (user-part (propertize username 'face user-face))
          (time-str (taut-message--format-ts (taut-message-ts reply)))
          (time-part (propertize time-str 'face 'taut-message-timestamp))
          (marker-branch (if is-last "             └─ " "             ├─ "))
          (marker-indent (if is-last "                " "             │  ")))
-    (insert marker-branch user-part "  " time-part)
+    (insert marker-branch)
+    (let ((avatar (taut-user-get-avatar-image user)))
+      (when avatar
+        (insert (propertize " " 'display avatar) " ")))
+    (insert user-part "  " time-part)
     (when (taut-message-is-starred reply)
       (insert " " (propertize "⭐" 'face 'taut-message-star)))
     (insert "\n")
     (insert marker-indent)
     (taut-message--insert-formatted-text (taut-message-text reply) marker-indent)
     (insert "\n")
+
+    ;; Media attachments/previews in inline reply
+    (taut-message--insert-media-previews reply marker-indent)
     ;; Reactions in reply
     (when (taut-message-reactions reply)
       (insert marker-indent)
@@ -1175,6 +1256,157 @@ If supported but not cached, triggers asynchronous download and returns nil."
               (puthash (concat name "-downloading") t taut-custom-emojis)
               (taut-custom-emoji-download-async name url local-path (current-buffer)))
             nil))))))
+
+(defvar taut-media-downloading (make-hash-table :test 'equal)
+  "Hash table to keep track of active media downloads.")
+
+(defun taut-media-file-path (url)
+  "Get local cached file path for media URL.
+Uses MD5 hashing for robust filenames across diverse platforms."
+  (let* ((hash (md5 url))
+         (ext (cond
+               ((string-match "\\.\\(gif\\|png\\|jpe?g\\|webp\\)" url)
+                (match-string 1 url))
+               (t "png")))
+         (cache-dir (progn
+                      (unless (file-exists-p taut-media-cache-dir)
+                        (make-directory taut-media-cache-dir t))
+                      taut-media-cache-dir)))
+    (expand-file-name (concat hash "." ext) cache-dir)))
+
+(defvar url-request-extra-headers)
+
+(defun taut-media-download-async (url local-path buffer-to-refresh)
+  "Asynchronously download media URL to LOCAL-PATH.
+Uses custom authorization headers if URL lies on Slack private servers.
+Runs buffer-specific refresh upon completion."
+  (unless (gethash url taut-media-downloading)
+    (puthash url t taut-media-downloading)
+    (let* ((is-slack-private (string-match-p "files\\.slack\\.com" url))
+           (url-request-extra-headers
+            (when (and is-slack-private (boundp 'taut-bot-token) taut-bot-token)
+              (list (cons "Authorization" (concat "Bearer " taut-bot-token))))))
+      (url-retrieve url
+                    (lambda (status local-path buf url)
+                      (remhash url taut-media-downloading)
+                      (unless (plist-get status :error)
+                        (goto-char (point-min))
+                        (when (re-search-forward "\r?\n\r?\n" nil t)
+                          (let ((data-start (point))
+                                (coding-system-for-write 'no-conversion))
+                            (ignore-errors
+                              (make-directory (file-name-directory local-path) t)
+                              (write-region data-start (point-max) local-path nil 'silent)))))
+                      (kill-buffer (current-buffer))
+                      (when (and buf (buffer-live-p buf))
+                        (with-current-buffer buf
+                          (cond
+                           ((eq major-mode 'taut-message-mode)
+                            (taut-message-refresh))
+                           ((eq major-mode 'taut-thread-mode)
+                            (taut-thread-refresh))
+                           ((eq major-mode 'taut-inbox-mode)
+                            (taut-inbox-refresh))))))
+                    (list local-path buffer-to-refresh url)))))
+
+(defun taut-user-get-avatar-image (user)
+  "Get an image object for USER's avatar if supported and cached.
+If supported but not cached, triggers asynchronous download and returns nil."
+  (when (and (display-images-p)
+             (fboundp 'create-image)
+             taut-display-avatars-inline
+             user)
+    (let ((url (taut-user-avatar-url user)))
+      (when (and url (not (string-blank-p url)))
+        (let ((local-path (taut-media-file-path url)))
+          (if (file-exists-p local-path)
+              (ignore-errors
+                (create-image local-path nil nil
+                              :ascent 'center
+                              :max-height taut-avatar-size
+                              :max-width taut-avatar-size))
+            ;; Trigger async download
+            (taut-media-download-async url local-path (current-buffer))
+            nil))))))
+
+(defun taut-media-handle-interaction (url name local-path)
+  "Provide interactive menu for media attachment with URL, NAME, and LOCAL-PATH."
+  (interactive)
+  (let* ((choices '("Open in Emacs" "Open in Browser" "Download file locally"))
+         (choice (completing-read (format "Action for %s: " (or name "media")) choices nil t)))
+    (cond
+     ((string= choice "Open in Emacs")
+      (if (file-exists-p local-path)
+          (let ((buf (find-file-noselect local-path)))
+            (with-current-buffer buf
+              (rename-buffer (format "*Taut Media: %s*" name) t)
+              (setq buffer-read-only t))
+            (switch-to-buffer buf))
+        (message "Taut: Image file not yet downloaded.")))
+     ((string= choice "Open in Browser")
+      (browse-url url))
+     ((string= choice "Download file locally")
+      (taut-message-download-file url name)))))
+
+(defun taut-message--insert-media-previews (msg prefix)
+  "Render and insert previews for any media attachments in MSG.
+Uses PREFIX for left indentation."
+  (let ((files (taut-message-files msg)))
+    (dolist (f files)
+      (let* ((name (or (cdr (assoc 'name f)) (cdr (assoc 'title f)) "file"))
+             (mimetype (or (cdr (assoc 'mimetype f)) ""))
+             (url (taut-api-normalize-download-url
+                   (or (cdr (assoc 'url_private_download f)) (cdr (assoc 'url_private f)) "")))
+             (is-image (string-prefix-p "image/" mimetype)))
+        (cond
+         ((and is-image (display-images-p) taut-display-images-inline)
+          (if (and url (not (string-blank-p url)))
+              (let* ((local-path (taut-media-file-path url)))
+                (if (file-exists-p local-path)
+                    (let* ((img (ignore-errors
+                                  (create-image local-path nil nil
+                                                :ascent 'center
+                                                :max-height taut-image-max-height
+                                                :max-width taut-image-max-width)))
+                           (keymap (let ((map (make-sparse-keymap)))
+                                     (define-key map (kbd "RET") (lambda () (interactive) (taut-media-handle-interaction url name local-path)))
+                                     (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (taut-media-handle-interaction url name local-path)))
+                                     map)))
+                      (if img
+                          (progn
+                            (insert prefix)
+                            (insert (propertize " " 'display img
+                                                    'mouse-face 'highlight
+                                                    'help-echo (format "Click/RET to open: %s" name)
+                                                    'keymap keymap))
+                            (insert "\n"))
+                        ;; Failed to create image (corrupt or unsupported format)
+                        (insert prefix (propertize (format "🖼️ [Image Attachment: %s] (Click/RET to download)\n" name)
+                                                   'face 'taut-message-link
+                                                   'mouse-face 'highlight
+                                                   'help-echo "Click/RET to download"
+                                                   'keymap (let ((map (make-sparse-keymap)))
+                                                             (define-key map (kbd "RET") (lambda () (interactive) (taut-media-handle-interaction url name local-path)))
+                                                             (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (taut-media-handle-interaction url name local-path)))
+                                                             map)))))
+                  ;; File does not exist locally yet, trigger async download
+                  (taut-media-download-async url local-path (current-buffer))
+                  (insert prefix (propertize (format "⏳ [Loading image: %s...]\n" name) 'face 'font-lock-comment-face))))))
+         
+         ;; Non-image files, or image in non-graphic display / disabled
+         (t
+          (when (and url (not (string-blank-p url)))
+            (let* ((local-path (taut-media-file-path url))
+                   (keymap (let ((map (make-sparse-keymap)))
+                             (define-key map (kbd "RET") (lambda () (interactive) (taut-media-handle-interaction url name local-path)))
+                             (define-key map (kbd "<mouse-1>") (lambda (event) (interactive "e") (posn-set-point (event-end event)) (taut-media-handle-interaction url name local-path)))
+                             map)))
+              (insert prefix
+                      (propertize (format "📎 %s [%s] (Click/RET to open)\n" name (if (and is-image (not taut-display-images-inline)) "Image" "File"))
+                                  'face 'taut-message-link
+                                  'mouse-face 'highlight
+                                  'help-echo "Click/RET to open action menu"
+                                  'keymap keymap))))))))))
 
 (defun taut-message--format-reaction-emoji (emoji)
   "Format reaction EMOJI.

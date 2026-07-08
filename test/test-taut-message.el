@@ -429,5 +429,148 @@ line8
     (taut-message--insert-formatted-line "Custom emoji :sparkles-custom: inside text")
     (should (equal (buffer-string) "Custom emoji :sparkles-custom: inside text"))))
 
+(ert-deftest taut-message-avatar-rendering-test ()
+  "Test rendering of user avatars based on taut-display-avatars-inline setting."
+  (taut-model-clear-all)
+  (let* ((user (make-taut-user :id "U1" :username "alice" :avatar-url "https://example.com/alice.png"))
+         (msg (make-taut-message :ts "1688500000.111"
+                                 :text "Hello world"
+                                 :channel-id "C1"
+                                 :user-id "U1")))
+    (taut-model-add-user user)
+    ;; Mock display-images-p, create-image, and file-exists-p to simulate loaded avatar
+    (cl-letf (((symbol-function 'display-images-p) (lambda () t))
+              ((symbol-function 'create-image) (lambda (&rest _args) 'mock-avatar-image))
+              ((symbol-function 'file-exists-p) (lambda (&rest _args) t)))
+      
+      ;; 1. With taut-display-avatars-inline = t
+      (let ((taut-display-avatars-inline t))
+        (with-temp-buffer
+          (taut-message--render-message-line msg)
+          (goto-char (point-min))
+          ;; The buffer should start with the mock-avatar-image
+          (should (equal (get-text-property (point) 'display) 'mock-avatar-image))
+          ;; It should be followed by a space and then alice
+          (forward-char 1)
+          (should (equal (char-after) ? ))
+          (forward-char 1)
+          (should (search-forward "alice" nil t))))
+      
+      ;; 2. With taut-display-avatars-inline = nil
+      (let ((taut-display-avatars-inline nil))
+        (with-temp-buffer
+          (taut-message--render-message-line msg)
+          (goto-char (point-min))
+          ;; The buffer should NOT start with any display property (just "alice")
+          (should-not (get-text-property (point) 'display))
+          (should (search-forward "alice" nil t)))))))
+
+(ert-deftest taut-message-media-previews-rendering-test ()
+  "Test inline media and image previews rendering."
+  (taut-model-clear-all)
+  (let* ((user (make-taut-user :id "U1" :username "alice"))
+         (files-list '(((name . "screenshot.png")
+                        (mimetype . "image/png")
+                        (url_private_download . "https://files.slack.com/files-pri/T01-F12/download/screenshot.png"))
+                       ((name . "document.pdf")
+                        (mimetype . "application/pdf")
+                        (url_private_download . "https://files.slack.com/files-pri/T01-F34/download/document.pdf"))))
+         (msg (make-taut-message :ts "1688500000.111"
+                                 :text "Check this file"
+                                 :channel-id "C1"
+                                 :user-id "U1"
+                                 :files files-list)))
+    (taut-model-add-user user)
+    
+    (cl-letf (((symbol-function 'display-images-p) (lambda () t))
+              ((symbol-function 'create-image) (lambda (&rest _args) 'mock-attachment-image))
+              ((symbol-function 'file-exists-p) (lambda (&rest _args) t)))
+      
+      ;; 1. With taut-display-images-inline = t
+      (let ((taut-display-images-inline t))
+        (with-temp-buffer
+          (taut-message--render-message-line msg)
+          (goto-char (point-min))
+          ;; Verify huddle/text body rendered
+          (should (search-forward "Check this file" nil t))
+          ;; Verify inline image mock attachment rendered (as 'display image property)
+          (goto-char (point-min))
+          (should (search-forward " " nil t)) ; we find space propertized with display
+          (let ((found nil))
+            (goto-char (point-min))
+            (while (and (not found) (not (eobp)))
+              (if (equal (get-text-property (point) 'display) 'mock-attachment-image)
+                  (setq found t)
+                (forward-char 1)))
+            (should found))
+          ;; Verify document file fallback text link
+          (goto-char (point-min))
+          (should (search-forward "📎 document.pdf [File] (Click/RET to open)" nil t))))
+          
+      ;; 2. With taut-display-images-inline = nil (fallback to link for images as well)
+      (let ((taut-display-images-inline nil))
+        (with-temp-buffer
+          (taut-message--render-message-line msg)
+          (goto-char (point-min))
+          ;; Verify no display image exists
+          (let ((found nil))
+            (goto-char (point-min))
+            (while (and (not found) (not (eobp)))
+              (if (equal (get-text-property (point) 'display) 'mock-attachment-image)
+                  (setq found t)
+                (forward-char 1)))
+            (should-not found))
+          ;; Verify image is fallback link
+          (goto-char (point-min))
+          (should (search-forward "📎 screenshot.png [Image] (Click/RET to open)" nil t))
+          ;; Verify document is fallback link
+          (goto-char (point-min))
+          (should (search-forward "📎 document.pdf [File] (Click/RET to open)" nil t)))))))
+
+(ert-deftest taut-message-real-name-rendering-test ()
+  "Test rendering of user real names instead of usernames in chat and inline replies."
+  (taut-model-clear-all)
+  (let* ((user-real (make-taut-user :id "U_REAL" :username "greg.rhoades" :real-name "Greg Rhoades"))
+         (user-no-real (make-taut-user :id "U_NO_REAL" :username "alice" :real-name ""))
+         (msg-real (make-taut-message :ts "1688500000.111"
+                                      :text "Hello with real name"
+                                      :channel-id "C1"
+                                      :user-id "U_REAL"))
+         (msg-no-real (make-taut-message :ts "1688500000.222"
+                                         :text "Hello with username"
+                                         :channel-id "C1"
+                                         :user-id "U_NO_REAL")))
+    (taut-model-add-user user-real)
+    (taut-model-add-user user-no-real)
+    
+    ;; 1. Check message rendering for user with real name
+    (with-temp-buffer
+      (taut-message--render-message-line msg-real)
+      (goto-char (point-min))
+      (should (search-forward "Greg Rhoades" nil t))
+      (goto-char (point-min))
+      (should-not (search-forward "greg.rhoades" nil t)))
+
+    ;; 2. Check message rendering for user with empty real name (fallback to username)
+    (with-temp-buffer
+      (taut-message--render-message-line msg-no-real)
+      (goto-char (point-min))
+      (should (search-forward "alice" nil t)))
+
+    ;; 3. Check inline reply rendering for user with real name
+    (with-temp-buffer
+      (taut-message--render-inline-reply msg-real t "1688500000.000")
+      (goto-char (point-min))
+      (should (search-forward "Greg Rhoades" nil t))
+      (goto-char (point-min))
+      (should-not (search-forward "greg.rhoades" nil t)))
+
+    ;; 4. Check inline reply rendering for user with empty real name (fallback to username)
+    (with-temp-buffer
+      (taut-message--render-inline-reply msg-no-real t "1688500000.000")
+      (goto-char (point-min))
+      (should (search-forward "alice" nil t)))))
+
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here
+

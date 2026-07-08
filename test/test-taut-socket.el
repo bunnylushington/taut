@@ -132,7 +132,30 @@
       
       (let ((msg (taut-model-get-message-by-ts "1688500000.0001")))
         (should msg)
-        (should (equal (taut-message-text msg) "_This message was deleted._"))))))
+        (should (equal (taut-message-text msg) "_This message was deleted._")))
+      
+      ;; 4. Incoming message event with files
+      (taut-socket--handle-payload
+       mock-ws
+       '((envelope_id . "env-files-1")
+         (type . "events_api")
+         (payload . ((event . ((type . "message")
+                               (channel . "C_SOCKET_DEV")
+                               (user . "U_ALICE")
+                               (text . "Here is a file.")
+                               (ts . "1688500000.0002")
+                               (files . (((name . "photo.png")
+                                          (mimetype . "image/png")
+                                          (url_private_download . "https://example.com/download/photo.png"))))))))))
+      
+      (let ((msg (taut-model-get-message-by-ts "1688500000.0002")))
+        (should msg)
+        (should (string-prefix-p "Here is a file." (taut-message-text msg)))
+        (should (taut-message-files msg))
+        (let ((f (car (taut-message-files msg))))
+          (should (equal (cdr (assoc 'name f)) "photo.png"))
+          (should (equal (cdr (assoc 'mimetype f)) "image/png"))
+          (should (equal (cdr (assoc 'url_private_download f)) "https://example.com/download/photo.png")))))))
 
 (ert-deftest taut-socket-handle-reaction-events-test ()
   "Test adding and removing reaction event dispatching."

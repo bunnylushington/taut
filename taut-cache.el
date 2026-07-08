@@ -55,8 +55,11 @@ Creates the necessary tables if they do not exist."
                          real_name TEXT,
                          presence TEXT,
                          is_me INTEGER,
-                         custom_status TEXT
+                         custom_status TEXT,
+                         avatar_url TEXT
                        )")
+      (ignore-errors
+        (sqlite-execute taut-cache--db "ALTER TABLE users ADD COLUMN avatar_url TEXT"))
       (sqlite-execute taut-cache--db
                       "CREATE TABLE IF NOT EXISTS channels (
                          id TEXT PRIMARY KEY,
@@ -82,8 +85,11 @@ Creates the necessary tables if they do not exist."
                          reactions_json TEXT,
                          is_unread INTEGER,
                          is_mention INTEGER,
-                         is_starred INTEGER
+                         is_starred INTEGER,
+                         files_json TEXT
                        )")
+      (ignore-errors
+        (sqlite-execute taut-cache--db "ALTER TABLE messages ADD COLUMN files_json TEXT"))
       (sqlite-execute taut-cache--db
                       "CREATE TABLE IF NOT EXISTS watched_threads (
                          thread_ts TEXT PRIMARY KEY
@@ -105,14 +111,15 @@ Creates the necessary tables if they do not exist."
   (let ((db (taut-cache--get-db)))
     (when db
       (sqlite-execute db
-                      "INSERT OR REPLACE INTO users (id, username, real_name, presence, is_me, custom_status)
-                       VALUES (?, ?, ?, ?, ?, ?)"
+                      "INSERT OR REPLACE INTO users (id, username, real_name, presence, is_me, custom_status, avatar_url)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)"
                       (list (taut-user-id user)
                             (taut-user-username user)
                             (taut-user-real-name user)
                             (symbol-name (or (taut-user-presence user) 'offline))
                             (if (taut-user-is-me user) 1 0)
-                            (taut-user-custom-status user))))))
+                            (taut-user-custom-status user)
+                            (taut-user-avatar-url user))))))
 
 (defun taut-cache-save-channel (chan)
   "Save CHAN (a `taut-channel' struct) to the SQLite database."
@@ -143,10 +150,12 @@ Creates the necessary tables if they do not exist."
   (let ((db (taut-cache--get-db)))
     (when db
       (let* ((reactions (taut-message-reactions msg))
-             (reactions-json (if reactions (json-encode reactions) "")))
+             (reactions-json (if reactions (json-encode reactions) ""))
+             (files (taut-message-files msg))
+             (files-json (if files (json-encode files) "")))
         (sqlite-execute db
-                        "INSERT OR REPLACE INTO messages (id, channel_id, user_id, text, ts, thread_ts, reply_count, reactions_json, is_unread, is_mention, is_starred)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        "INSERT OR REPLACE INTO messages (id, channel_id, user_id, text, ts, thread_ts, reply_count, reactions_json, is_unread, is_mention, is_starred, files_json)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         (list (taut-message-id msg)
                               (taut-message-channel-id msg)
                               (taut-message-user-id msg)
@@ -157,7 +166,8 @@ Creates the necessary tables if they do not exist."
                               reactions-json
                               (if (taut-message-is-unread msg) 1 0)
                               (if (taut-message-is-mention msg) 1 0)
-                              (if (taut-message-is-starred msg) 1 0)))))))
+                              (if (taut-message-is-starred msg) 1 0)
+                              files-json))))))
 
 (defun taut-cache-delete-message (ts)
   "Delete message identified by TS from the SQLite database."
@@ -199,7 +209,7 @@ Creates the necessary tables if they do not exist."
               (setf (gethash ts taut-local-edits) text)))))
 
       ;; 1. Load users
-      (let ((users (sqlite-select db "SELECT id, username, real_name, presence, is_me, custom_status FROM users")))
+      (let ((users (sqlite-select db "SELECT id, username, real_name, presence, is_me, custom_status, avatar_url FROM users")))
         (dolist (row users)
           (let* ((id (nth 0 row))
                  (username (nth 1 row))
@@ -207,13 +217,15 @@ Creates the necessary tables if they do not exist."
                  (presence-str (nth 3 row))
                  (is-me (nth 4 row))
                  (custom-status (nth 5 row))
+                 (avatar-url (nth 6 row))
                  (user (make-taut-user
                         :id id
                         :username username
                         :real-name real-name
                         :presence (taut-model-normalize-presence presence-str)
                         :is-me (= is-me 1)
-                        :custom-status custom-status)))
+                        :custom-status custom-status
+                        :avatar-url avatar-url)))
             (setf (gethash id taut-users) user)
             (when (= is-me 1)
               (setq taut-current-user-id id)))))
@@ -248,7 +260,7 @@ Creates the necessary tables if they do not exist."
           (push (car row) taut-watched-threads)))
 
       ;; 4. Load messages
-      (let ((msgs (sqlite-select db "SELECT id, channel_id, user_id, text, ts, thread_ts, reply_count, reactions_json, is_unread, is_mention, is_starred FROM messages")))
+      (let ((msgs (sqlite-select db "SELECT id, channel_id, user_id, text, ts, thread_ts, reply_count, reactions_json, is_unread, is_mention, is_starred, files_json FROM messages")))
         (dolist (row msgs)
           (let* ((id (nth 0 row))
                  (channel-id (nth 1 row))
@@ -261,12 +273,19 @@ Creates the necessary tables if they do not exist."
                  (is-unread (nth 8 row))
                  (is-mention (nth 9 row))
                  (is-starred (nth 10 row))
+                 (files-json (nth 11 row))
                  (reactions (unless (string= reactions-json "")
                               (ignore-errors
                                 (let ((json-array-type 'list)
                                       (json-object-type 'alist)
                                       (json-key-type 'symbol))
                                   (json-read-from-string reactions-json)))))
+                 (files (when (and files-json (not (string= files-json "")))
+                          (ignore-errors
+                            (let ((json-array-type 'list)
+                                  (json-object-type 'alist)
+                                  (json-key-type 'symbol))
+                              (json-read-from-string files-json)))))
                  (msg (make-taut-message
                        :id id
                        :channel-id channel-id
@@ -278,7 +297,8 @@ Creates the necessary tables if they do not exist."
                        :reactions reactions
                        :is-unread (= is-unread 1)
                        :is-mention (= is-mention 1)
-                       :is-starred (= is-starred 1))))
+                       :is-starred (= is-starred 1)
+                       :files files)))
             ;; Insert message directly into memory maps based on whether it is a thread reply
             (if (and thread-ts (not (equal thread-ts ts)))
                 (let ((replies (gethash thread-ts taut-threads)))

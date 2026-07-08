@@ -138,7 +138,9 @@ If APPTOKEN is non-nil, use the App Token starting with xapp-."
             :username (cdr (assoc 'name m))
             :real-name (or (cdr (assoc 'real_name profile)) (cdr (assoc 'real_name m)) (cdr (assoc 'name m)))
             :presence (if (equal (cdr (assoc 'presence m)) "away") 'away 'offline)
-            :is-me (equal id taut-current-user-id))))))
+            :is-me (equal id taut-current-user-id)
+            :avatar-url (or (cdr (assoc 'image_32 profile))
+                            (cdr (assoc 'image_24 profile))))))))
   (message "Taut: Synced %d workspace users." (hash-table-count taut-users))))
 
 (defun taut-api-fetch-active-presences ()
@@ -436,14 +438,25 @@ the first few public/private channels to populate the activity feed."
               (cl-incf seeded-count))))))
     (message "Taut: Pre-fetched history for %d active conversations." fetched-count)))
 
+(defun taut-api-normalize-download-url (url)
+  "Normalize URL.
+If it's a Slack private URL lacking `/download/`, derive the download URL."
+  (if (and (stringp url)
+           (string-match-p "https://files\\.slack\\.com/files-pri/" url))
+      (replace-regexp-in-string
+       "\\(https://files\\.slack\\.com/files-pri/[^/]+\\)/\\([^/?]+\\)\\(\\?.*\\)?$"
+       "\\1/download/\\2\\3"
+       url)
+    url))
+
 (defun taut-api-unescape-html (text)
   "Replace common HTML entities in TEXT with their literal characters."
   (if text
       (let ((s text))
-        (setq s (replace-regexp-in-string "&lt;" "<" s t t))
-        (setq s (replace-regexp-in-string "&gt;" ">" s t t))
-        (setq s (replace-regexp-in-string "&amp;" "&" s t t))
-        s)
+         (setq s (replace-regexp-in-string "&lt;" "<" s t t))
+         (setq s (replace-regexp-in-string "&gt;" ">" s t t))
+         (setq s (replace-regexp-in-string "&amp;" "&" s t t))
+         s)
     ""))
 
 (defun taut-api--format-file-shares (event text)
@@ -452,9 +465,10 @@ the first few public/private channels to populate the activity feed."
         (file-links nil))
     (dolist (f files)
       (let* ((name (or (cdr (assoc 'title f)) (cdr (assoc 'name f)) "file"))
-             (download-url (or (cdr (assoc 'url_private_download f))
-                               (cdr (assoc 'url_private f))
-                               (cdr (assoc 'permalink f))))
+             (download-url (taut-api-normalize-download-url
+                            (or (cdr (assoc 'url_private_download f))
+                                (cdr (assoc 'url_private f))
+                                (cdr (assoc 'permalink f)))))
              (browser-url (or (cdr (assoc 'permalink f))
                               (cdr (assoc 'url_private f)))))
         (if download-url
@@ -537,6 +551,7 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                      (reply-count (cdr (assoc 'reply_count m)))
                      (reactions (cdr (assoc 'reactions m)))
                      (is-starred (taut-api--bool (cdr (assoc 'is_starred m))))
+                     (files (cdr (assoc 'files m)))
                      ;; Mark as unread if it is not sent by current user.
                      ;; Use last-read if available; otherwise use index-based
                      ;; unread-left counting.
@@ -576,7 +591,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                   :reactions model-reactions
                   :is-unread is-unread
                   :is-mention is-mention
-                  :is-starred is-starred)
+                  :is-starred is-starred
+                  :files files)
                  nil
                  t)))))))
     ;; If we fetched with last-read, we can accurately update the channel's
@@ -620,7 +636,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                  (raw-text (or (cdr (assoc 'text root-msg-data)) ""))
                  (full-text (taut-api--get-message-text root-msg-data raw-text))
                  (text (taut-api-unescape-html full-text))
-                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text)))
+                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
+                 (files (cdr (assoc 'files root-msg-data))))
             (when ts
               (taut-model-add-message
                (make-taut-message
@@ -633,7 +650,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
                 :reply-count (or reply-count 0)
                 :is-unread nil
                 :is-mention is-mention
-                :is-starred root-is-starred)
+                :is-starred root-is-starred
+                :files files)
                t))))))
     ;; Reset old thread cache, preserving any bookmarked replies
     (let ((starred-replies (cl-remove-if-not #'taut-message-is-starred (gethash thread-ts taut-threads))))
@@ -646,7 +664,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
              (full-text (taut-api--get-message-text m raw-text))
              (text (taut-api-unescape-html full-text))
              (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) text))
-             (is-starred (taut-api--bool (cdr (assoc 'is_starred m)))))
+             (is-starred (taut-api--bool (cdr (assoc 'is_starred m))))
+             (files (cdr (assoc 'files m))))
         (when ts
           (taut-model-add-message
            (make-taut-message
@@ -659,7 +678,8 @@ If LATEST is specified, fetch messages older than LATEST (for pagination)."
             :reply-count 0
             :is-unread nil
             :is-mention is-mention
-            :is-starred is-starred)
+            :is-starred is-starred
+            :files files)
            t))))
     (taut-model-trigger-update)))
 
@@ -864,7 +884,8 @@ Implements Slack's modern 3-step files upload flow:
   "Download file from Slack private URL to LOCAL-PATH using curl.
 Uses the active bearer token for authorization."
   (let ((token taut-bot-token)
-        (curl-bin (executable-find "curl")))
+        (curl-bin (executable-find "curl"))
+        (normalized-url (taut-api-normalize-download-url url)))
     (unless token
       (error "Taut: Token not configured"))
     (unless curl-bin
@@ -874,7 +895,7 @@ Uses the active bearer token for authorization."
       (let ((args (list "-s" "-L"
                         "-H" (concat "Authorization: Bearer " token)
                         "-o" (expand-file-name local-path)
-                        url)))
+                        normalized-url)))
         (apply #'call-process curl-bin nil t nil args)))
     (message "Taut: Successfully downloaded file to %s" local-path)))
 

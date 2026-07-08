@@ -286,7 +286,8 @@ Only active when `alert' is installed and available."
                       (full-text (taut-api--get-message-text event raw-text))
                       (text (taut-api-unescape-html (taut-api--format-file-shares event full-text)))
                       (ts (cdr (assoc 'ts event)))
-                      (thread-ts (cdr (assoc 'thread_ts event))))
+                      (thread-ts (cdr (assoc 'thread_ts event)))
+                      (files (cdr (assoc 'files event))))
                  (taut-socket--notify-message chan-id user-id text)
 
                  (when ts
@@ -301,7 +302,8 @@ Only active when `alert' is installed and available."
                        :thread-ts thread-ts
                        :reply-count 0
                        :is-unread t
-                       :is-mention is-mention)))))))))
+                       :is-mention is-mention
+                       :files files)))))))))
          
          ;; Handle added reaction
          ((string= event-type "reaction_added")

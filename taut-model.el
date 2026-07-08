@@ -265,7 +265,8 @@ DMs, or threads always open in the dedicated Chat/Thread window."
   presence     ; 'online, 'away, 'offline
   is-me        ; t or nil
   custom-status
-  is-huddling)
+  is-huddling
+  avatar-url)
 
 (cl-defstruct taut-channel
   "Represents a Slack channel, group, or DM."
@@ -292,7 +293,8 @@ DMs, or threads always open in the dedicated Chat/Thread window."
   reactions     ; Alist of (emoji-name . list-of-user-ids)
   is-unread     ; t or nil
   is-mention    ; t or nil if current user was mentioned
-  is-starred)   ; t or nil if starred/bookmarked
+  is-starred    ; t or nil if starred/bookmarked
+  files)        ; List of files parsed from Slack JSON
 
 (cl-defstruct taut-inbox-item
   "Represents an item in the Gnus-style unified Inbox feed."

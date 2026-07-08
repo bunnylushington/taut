@@ -282,5 +282,24 @@
         (should (equal res '("U_ALICE" "U_BOB")))
         (should (equal (car requests) '("conversations.members" ((channel . "C_DEV")) "GET")))))))
 
+(ert-deftest taut-api-normalize-download-url-test ()
+  "Test that taut-api-normalize-download-url correctly derives Slack download URLs."
+  ;; Normal files-pri URL should be converted to download URL
+  (should (equal (taut-api-normalize-download-url "https://files.slack.com/files-pri/T0123-F456/screenshot.png")
+                 "https://files.slack.com/files-pri/T0123-F456/download/screenshot.png"))
+  ;; URL with query parameters should preserve query parameters
+  (should (equal (taut-api-normalize-download-url "https://files.slack.com/files-pri/T0123-F456/screenshot.png?pub_secret=123")
+                 "https://files.slack.com/files-pri/T0123-F456/download/screenshot.png?pub_secret=123"))
+  ;; Already normalized download URL should be left alone
+  (should (equal (taut-api-normalize-download-url "https://files.slack.com/files-pri/T0123-F456/download/screenshot.png")
+                 "https://files.slack.com/files-pri/T0123-F456/download/screenshot.png"))
+  (should (equal (taut-api-normalize-download-url "https://files.slack.com/files-pri/T0123-F456/download/screenshot.png?pub_secret=123")
+                 "https://files.slack.com/files-pri/T0123-F456/download/screenshot.png?pub_secret=123"))
+  ;; Other URLs should be left unmodified
+  (should (equal (taut-api-normalize-download-url "https://example.com/photo.png")
+                 "https://example.com/photo.png"))
+  (should (equal (taut-api-normalize-download-url nil)
+                 nil)))
+
 (provide 'test-taut-api)
 ;;; test-taut-api.el ends here
