@@ -409,11 +409,13 @@
          (exists (file-directory-p new-dir)))
     (cond
      (exists
+      (setq taut-shell-steps-initial-directory new-dir)
       (setq taut-shell-steps-directory new-dir)
       (taut-shell-steps-render)
       (message "Execution directory set to %s" taut-shell-steps-directory))
      ((yes-or-no-p (format "Directory %s does not exist. Create it? " new-dir))
       (make-directory new-dir t)
+      (setq taut-shell-steps-initial-directory new-dir)
       (setq taut-shell-steps-directory new-dir)
       (taut-shell-steps-render)
       (message "Created and set execution directory to %s" taut-shell-steps-directory))

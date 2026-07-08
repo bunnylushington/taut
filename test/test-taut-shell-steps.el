@@ -78,35 +78,47 @@
   "Test resetting all step statuses back to Pending and restoring directory."
   (let* ((cmds '("echo foo" "echo bar"))
          (initial-dir (make-temp-file "taut-steps-reset-initial-" t))
-         (new-dir (make-temp-file "taut-steps-reset-new-" t)))
+         (new-dir (make-temp-file "taut-steps-reset-new-" t))
+         (user-manual-dir (make-temp-file "taut-steps-reset-manual-" t))
+         (step-changed-dir (make-temp-file "taut-steps-reset-step-" t)))
     (unwind-protect
         (save-window-excursion
           (taut-shell-steps-open cmds initial-dir)
           (let ((buf (get-buffer "*Taut Shell Steps*")))
             (should buf)
             (with-current-buffer buf
-              ;; Artificially change directory and set statuses
-              (setq taut-shell-steps-directory new-dir)
+              ;; Scenario 1: A step changes the directory. Resetting should revert to initial-dir.
+              (setq taut-shell-steps-directory step-changed-dir)
               (setq taut-shell-steps-data
-                    (mapcar (lambda (s)
-                              (plist-put s :status "Success"))
-                            taut-shell-steps-data))
-              (taut-shell-steps-render)
-
-              (should (equal taut-shell-steps-directory new-dir))
-              (should (equal (plist-get (car taut-shell-steps-data) :status) "Success"))
-
-              ;; Trigger reset
+                    (mapcar (lambda (s) (plist-put s :status "Success")) taut-shell-steps-data))
               (taut-shell-steps-reset)
-
-              ;; Verify statuses and directory are restored
               (should (equal taut-shell-steps-directory (expand-file-name initial-dir)))
               (should (equal (plist-get (car taut-shell-steps-data) :status) "Pending"))
-              (should (equal (plist-get (cadr taut-shell-steps-data) :status) "Pending"))
+
+              ;; Scenario 2: User manually changes the directory, and then a step changes it.
+              ;; Resetting should revert to the manually chosen directory.
+              (cl-letf (((symbol-function 'read-directory-name) (lambda (&rest _) user-manual-dir)))
+                (taut-shell-steps-change-dir))
+              (should (equal taut-shell-steps-directory (expand-file-name user-manual-dir)))
+              (should (equal taut-shell-steps-initial-directory (expand-file-name user-manual-dir)))
+
+              ;; Now mock a step changing it dynamically during execution
+              (setq taut-shell-steps-directory step-changed-dir)
+              (setq taut-shell-steps-data
+                    (mapcar (lambda (s) (plist-put s :status "Success")) taut-shell-steps-data))
+
+              ;; Run reset
+              (taut-shell-steps-reset)
+
+              ;; Verify it restored the user's manual choice!
+              (should (equal taut-shell-steps-directory (expand-file-name user-manual-dir)))
+              (should (equal (plist-get (car taut-shell-steps-data) :status) "Pending"))
 
               (kill-buffer buf))))
       (delete-directory initial-dir t)
-      (delete-directory new-dir t))))
+      (delete-directory new-dir t)
+      (delete-directory user-manual-dir t)
+      (delete-directory step-changed-dir t))))
 
 (ert-deftest taut-shell-steps-change-dir-create-test ()
   "Test that changing to a non-existent directory prompts for creation."
