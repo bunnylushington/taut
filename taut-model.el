@@ -319,6 +319,9 @@ DMs, or threads always open in the dedicated Chat/Thread window."
 (defvar taut-users (make-hash-table :test 'equal)
   "Hash table mapping user-id (string) to `taut-user` struct.")
 
+(defvar taut-custom-emojis (make-hash-table :test 'equal)
+  "Hash table mapping custom emoji names (string, no colons) to their image URLs (string).")
+
 (defvar taut-channels (make-hash-table :test 'equal)
   "Hash table mapping channel-id (string) to `taut-channel` struct.")
 
@@ -843,6 +846,7 @@ Preserves existing is-hidden state if already present."
   (clrhash taut-messages)
   (clrhash taut-threads)
   (clrhash taut-local-edits)
+  (clrhash taut-custom-emojis)
   (setq taut-watched-threads nil)
   (taut-model-trigger-update))
 

@@ -14,6 +14,7 @@
 
 (require 'taut-model)
 (require 'taut-api)
+(require 'url)
 (declare-function taut-message-reply-normal "taut-compose")
 (declare-function taut-message-reply-quote "taut-compose")
 (declare-function taut-thread-refresh "taut-thread")
@@ -857,8 +858,9 @@ history from API first."
       (dolist (reaction (taut-message-reactions msg))
         (let* ((emoji (car reaction))
                (reactors (cdr reaction))
-               (display-emoji (taut-emoji-translate emoji)))
-          (insert (propertize (format " %s %d " display-emoji (length reactors))
+               (display-emoji (taut-message--format-reaction-emoji emoji))
+               (btn-text (concat " " display-emoji (format " %d " (length reactors)))))
+          (insert (propertize btn-text
                               'face 'taut-message-reaction
                               'mouse-face 'highlight
                               'help-echo (taut-message--format-reaction-tooltip reactors)
@@ -940,8 +942,9 @@ ROOT-TS is the timestamp of the parent message."
       (dolist (reaction (taut-message-reactions reply))
         (let* ((emoji (car reaction))
                (reactors (cdr reaction))
-               (display-emoji (taut-emoji-translate emoji)))
-          (insert (propertize (format " %s %d " display-emoji (length reactors))
+               (display-emoji (taut-message--format-reaction-emoji emoji))
+               (btn-text (concat " " display-emoji (format " %d " (length reactors)))))
+          (insert (propertize btn-text
                               'face 'taut-message-reaction
                               'mouse-face 'highlight
                               'help-echo (taut-message--format-reaction-tooltip reactors)
@@ -1105,6 +1108,85 @@ character or end of string."
                   (replace-match emoji t t)))))))
       (buffer-string))))
 
+(defun taut-custom-emoji-cache-dir ()
+  "Return the local cache directory for custom emojis."
+  (let ((dir (expand-file-name "taut/cache/emoji/" user-emacs-directory)))
+    (unless (file-exists-p dir)
+      (make-directory dir t))
+    dir))
+
+(defun taut-custom-emoji-file-path (name url)
+  "Get local file path for custom emoji NAME with URL."
+  (let* ((ext (if (string-match "\\.\\(gif\\|png\\|jpe?g\\)$" url)
+                  (match-string 1 url)
+                "png"))
+         (cache-dir (taut-custom-emoji-cache-dir)))
+    (expand-file-name (concat name "." ext) cache-dir)))
+
+(defun taut-custom-emoji-get (name)
+  "Get the custom emoji URL or standard name for NAME.
+Resolves aliases recursively."
+  (let ((val (gethash name taut-custom-emojis))
+        (visited (list name)))
+    (while (and (stringp val)
+                (string-prefix-p "alias:" val)
+                (let ((target (substring val 6)))
+                  (and (not (member target visited))
+                       (progn
+                         (push target visited)
+                         (setq val (gethash target taut-custom-emojis)))))))
+    val))
+
+(defun taut-custom-emoji-download-async (_name url local-path buffer-to-refresh)
+  "Asynchronously download custom emoji from URL to LOCAL-PATH.
+When finished, refreshes BUFFER-TO-REFRESH."
+  (url-retrieve url
+                (lambda (status local-path buf)
+                  (unless (plist-get status :error)
+                    (goto-char (point-min))
+                    (re-search-forward "\r?\n\r?\n" nil t)
+                    (let ((data-start (point)))
+                      (let ((coding-system-for-write 'no-conversion))
+                        (write-region data-start (point-max) local-path))))
+                  (kill-buffer (current-buffer))
+                  (when (and buf (buffer-live-p buf))
+                    (with-current-buffer buf
+                      (cond
+                       ((eq major-mode 'taut-message-mode)
+                        (taut-message-refresh))
+                       ((eq major-mode 'taut-thread-mode)
+                        (taut-thread-refresh))
+                       ((eq major-mode 'taut-inbox-mode)
+                        (taut-inbox-refresh))))))
+                (list local-path buffer-to-refresh)))
+
+(defun taut-custom-emoji-get-image (name)
+  "Get an image object for custom emoji NAME if images are supported and cached.
+If supported but not cached, triggers asynchronous download and returns nil."
+  (when (and (display-images-p) (fboundp 'create-image))
+    (let ((url (taut-custom-emoji-get name)))
+      (when url
+        (let ((local-path (taut-custom-emoji-file-path name url)))
+          (if (file-exists-p local-path)
+              (ignore-errors
+                (create-image local-path nil nil :ascent 'center :max-height 20 :max-width 20))
+            ;; Download asynchronously if not yet cached
+            (unless (gethash (concat name "-downloading") taut-custom-emojis)
+              (puthash (concat name "-downloading") t taut-custom-emojis)
+              (taut-custom-emoji-download-async name url local-path (current-buffer)))
+            nil))))))
+
+(defun taut-message--format-reaction-emoji (emoji)
+  "Format reaction EMOJI.
+Format as either a unicode character or a propertized custom image."
+  (let* ((clean-name (if (and (string-prefix-p ":" emoji) (string-suffix-p ":" emoji))
+                         (substring emoji 1 -1)
+                       emoji))
+         (custom-img (taut-custom-emoji-get-image clean-name)))
+    (if custom-img
+        (propertize " " 'display custom-img 'rear-nonsticky t)
+      (taut-emoji-translate emoji))))
+
 (defun taut-emoji-translate (name)
   "Translate Slack emoji shortcode NAME to unicode.
 Allows both raw shortcode names and bracketed format like \":raised_hands:\".
@@ -1261,8 +1343,14 @@ Insert at point with premium faces and interactive links."
                                              map))))))
          ;; :emoji:
          ((match-string 22 text)
-          (let ((emoji-name (match-string 22 text)))
-            (insert (taut-emoji-translate emoji-name)))))
+          (let* ((emoji-name (match-string 22 text))
+                 (clean-name (if (and (string-prefix-p ":" emoji-name) (string-suffix-p ":" emoji-name))
+                                 (substring emoji-name 1 -1)
+                               emoji-name))
+                 (custom-img (taut-custom-emoji-get-image clean-name)))
+            (if custom-img
+                (insert (propertize " " 'display custom-img 'rear-nonsticky t))
+              (insert (taut-emoji-translate emoji-name))))))
          
          (setq start match-end)))
     ;; Insert trailing plain text

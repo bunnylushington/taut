@@ -892,5 +892,18 @@ Optional arguments:
     (when count (push `(count . ,count) params))
     (taut-api--request "search.messages" params "GET")))
 
+(defun taut-api-fetch-custom-emojis ()
+  "Fetch custom emojis in the workspace and populate `taut-custom-emojis'."
+  (interactive)
+  (message "Taut: Syncing custom emojis...")
+  (let* ((res (taut-api--request "emoji.list" nil "GET"))
+         (emoji-map (cdr (assoc 'emoji res))))
+    (clrhash taut-custom-emojis)
+    (dolist (pair emoji-map)
+      (let ((name (symbol-name (car pair)))
+            (url (cdr pair)))
+        (puthash name url taut-custom-emojis)))
+    (message "Taut: Synced %d workspace custom emojis." (hash-table-count taut-custom-emojis))))
+
 (provide 'taut-api)
 ;;; taut-api.el ends here

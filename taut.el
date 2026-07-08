@@ -111,6 +111,7 @@
           (taut-api-fetch-active-presences)
           (taut-api-fetch-starred)
           (taut-api-fetch-inbox-history)
+          (taut-api-fetch-custom-emojis)
           
           ;; If app token is configured, establish Socket Mode WebSocket connection
           (when taut-app-token

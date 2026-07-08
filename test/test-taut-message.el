@@ -378,5 +378,56 @@ line8
         ;; Should be capped at 3
         (should (= (length taut-message-reference-ring) 3))))))
 
+(ert-deftest taut-custom-emoji-resolution-test ()
+  "Test custom emoji fetching, resolution, and recursion safety."
+  (clrhash taut-custom-emojis)
+  (puthash "hyper-rocket" "https://example.com/hyper-rocket.gif" taut-custom-emojis)
+  (puthash "super-rocket" "alias:hyper-rocket" taut-custom-emojis)
+  (puthash "mega-rocket" "alias:super-rocket" taut-custom-emojis)
+  ;; Infinite loop test case
+  (puthash "loop-1" "alias:loop-2" taut-custom-emojis)
+  (puthash "loop-2" "alias:loop-1" taut-custom-emojis)
+
+  ;; Check direct retrieval
+  (should (equal (taut-custom-emoji-get "hyper-rocket") "https://example.com/hyper-rocket.gif"))
+  ;; Check single alias resolution
+  (should (equal (taut-custom-emoji-get "super-rocket") "https://example.com/hyper-rocket.gif"))
+  ;; Check recursive alias resolution
+  (should (equal (taut-custom-emoji-get "mega-rocket") "https://example.com/hyper-rocket.gif"))
+  ;; Check loop safety - should return the unresolved alias or nil, but NOT spin forever
+  (should-not (equal (taut-custom-emoji-get "loop-1") "https://example.com/hyper-rocket.gif"))
+  ;; Check non-existent custom emoji
+  (should-not (taut-custom-emoji-get "non-existent")))
+
+(ert-deftest taut-custom-emoji-file-path-test ()
+  "Test local file path generation for custom emojis."
+  (let ((cache-dir (taut-custom-emoji-cache-dir)))
+    (should (equal (taut-custom-emoji-file-path "hyper-rocket" "https://example.com/hyper-rocket.gif")
+                   (expand-file-name "hyper-rocket.gif" cache-dir)))
+    (should (equal (taut-custom-emoji-file-path "simple-emoji" "https://example.com/simple-emoji")
+                   (expand-file-name "simple-emoji.png" cache-dir)))))
+
+(ert-deftest taut-custom-emoji-formatting-fallback-test ()
+  "Test that custom emojis properly format, falling back gracefully if images are unavailable."
+  (clrhash taut-custom-emojis)
+  (puthash "sparkles-custom" "https://example.com/sparkles.png" taut-custom-emojis)
+  
+  ;; 1. Reaction emoji formatting fallback (text-only terminal or missing cache)
+  (let ((formatted (taut-message--format-reaction-emoji "sparkles-custom")))
+    (should (equal formatted ":sparkles-custom:")))
+  
+  ;; With bracketed/coloned input
+  (let ((formatted (taut-message--format-reaction-emoji ":sparkles-custom:")))
+    (should (equal formatted ":sparkles-custom:")))
+
+  ;; Standard emoji should translate to unicode
+  (let ((formatted (taut-message--format-reaction-emoji "thumbsup")))
+    (should (equal formatted "👍")))
+
+  ;; 2. Inline message formatting fallback
+  (with-temp-buffer
+    (taut-message--insert-formatted-line "Custom emoji :sparkles-custom: inside text")
+    (should (equal (buffer-string) "Custom emoji :sparkles-custom: inside text"))))
+
 (provide 'test-taut-message)
 ;;; test-taut-message.el ends here
