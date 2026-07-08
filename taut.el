@@ -498,5 +498,184 @@ are immediately applied, even if older byte-compiled (.elc) files exist."
         (message "Taut: Launching Slack deep link for channel %s..." chan-id)
         (browse-url url)))))
 
+;;;###autoload
+(defun taut-channel-create (name is-private)
+  "Create a new channel with NAME.
+If IS-PRIVATE is non-nil, the channel will be private."
+  (interactive (list (read-string "Channel Name: ")
+                     (y-or-n-p "Make Channel Private? ")))
+  (let ((clean-name (replace-regexp-in-string " " "-" (downcase name))))
+    (message "Creating channel #%s..." clean-name)
+    (condition-case err
+        (let* ((res (taut-api-create-channel clean-name is-private))
+               (chan-id (cdr (assoc 'id (cdr (assoc 'channel res))))))
+          (message "Channel #%s created successfully!" clean-name)
+          (when chan-id
+            (taut-message-open chan-id)))
+      (error
+       (message "Error creating channel: %s" (error-message-string err))))))
+
+;;;###autoload
+(defun taut-channel-invite (channel-id user-id)
+  "Invite a user to a channel."
+  (interactive
+   (let* ((default-chan-id (or (get-text-property (point) 'taut-channel-id)
+                               (and (boundp 'taut-current-channel-id) taut-current-channel-id)))
+          (chan-choices (mapcar (lambda (c) (cons (taut-channel-name c) (taut-channel-id c)))
+                                (taut-model-get-channels-list)))
+          (channel-id (if default-chan-id
+                          default-chan-id
+                        (let ((choice (completing-read "Invite to Channel: " (mapcar #'car chan-choices) nil t)))
+                          (cdr (assoc choice chan-choices)))))
+          (user-choices (mapcar (lambda (u) (cons (format "%s (%s)" (taut-user-username u) (taut-user-real-name u)) (taut-user-id u)))
+                                (let (users) (maphash (lambda (_k v) (push v users)) taut-users) users)))
+          (user-choice (completing-read "Invite User: " (mapcar #'car user-choices) nil t))
+          (user-id (cdr (assoc user-choice user-choices))))
+     (list channel-id user-id)))
+  (when (and channel-id user-id)
+    (let ((chan-name (or (and (taut-model-get-channel channel-id) (taut-channel-name (taut-model-get-channel channel-id))) channel-id))
+          (username (or (and (taut-model-get-user user-id) (taut-user-username (taut-model-get-user user-id))) user-id)))
+      (message "Inviting @%s to #%s..." username chan-name)
+      (condition-case err
+          (progn
+            (taut-api-invite-to-channel channel-id (list user-id))
+            (message "Successfully invited @%s to #%s!" username chan-name))
+        (error
+         (message "Error inviting user: %s" (error-message-string err)))))))
+
+;;;###autoload
+(defun taut-channel-kick (channel-id user-id)
+  "Remove a user from a channel."
+  (interactive
+   (let* ((default-chan-id (or (get-text-property (point) 'taut-channel-id)
+                               (and (boundp 'taut-current-channel-id) taut-current-channel-id)))
+          (chan-choices (mapcar (lambda (c) (cons (taut-channel-name c) (taut-channel-id c)))
+                                (taut-model-get-channels-list)))
+          (channel-id (if default-chan-id
+                          default-chan-id
+                        (let ((choice (completing-read "Kick from Channel: " (mapcar #'car chan-choices) nil t)))
+                          (cdr (assoc choice chan-choices)))))
+          (user-choices (mapcar (lambda (u) (cons (format "%s (%s)" (taut-user-username u) (taut-user-real-name u)) (taut-user-id u)))
+                                (let (users) (maphash (lambda (_k v) (push v users)) taut-users) users)))
+          (user-choice (completing-read "Kick User: " (mapcar #'car user-choices) nil t))
+          (user-id (cdr (assoc user-choice user-choices))))
+     (list channel-id user-id)))
+  (when (and channel-id user-id)
+    (let ((chan-name (or (and (taut-model-get-channel channel-id) (taut-channel-name (taut-model-get-channel channel-id))) channel-id))
+          (username (or (and (taut-model-get-user user-id) (taut-user-username (taut-model-get-user user-id))) user-id)))
+      (message "Removing @%s from #%s..." username chan-name)
+      (condition-case err
+          (progn
+            (taut-api-kick-from-channel channel-id user-id)
+            (message "Successfully removed @%s from #%s!" username chan-name))
+        (error
+         (message "Error removing user: %s" (error-message-string err)))))))
+
+;;;###autoload
+(defun taut-channel-set-topic (channel-id topic)
+  "Set or edit the topic of a channel."
+  (interactive
+   (let* ((default-chan-id (or (get-text-property (point) 'taut-channel-id)
+                               (and (boundp 'taut-current-channel-id) taut-current-channel-id)))
+          (chan-choices (mapcar (lambda (c) (cons (taut-channel-name c) (taut-channel-id c)))
+                                (taut-model-get-channels-list)))
+          (channel-id (if default-chan-id
+                          default-chan-id
+                        (let ((choice (completing-read "Channel: " (mapcar #'car chan-choices) nil t)))
+                          (cdr (assoc choice chan-choices)))))
+          (chan (and channel-id (taut-model-get-channel channel-id)))
+          (current-topic (and chan (taut-channel-topic chan)))
+          (topic (read-string "Set Topic: " current-topic)))
+     (list channel-id topic)))
+  (when channel-id
+    (let ((chan-name (or (and (taut-model-get-channel channel-id) (taut-channel-name (taut-model-get-channel channel-id))) channel-id)))
+      (message "Setting topic for #%s..." chan-name)
+      (condition-case err
+          (progn
+            (taut-api-set-channel-topic channel-id topic)
+            (message "Topic for #%s updated successfully!" chan-name))
+        (error
+         (message "Error setting topic: %s" (error-message-string err)))))))
+
+;;;###autoload
+(defun taut-channel-archive (channel-id)
+  "Archive (delete) a channel after confirmation."
+  (interactive
+   (let* ((default-chan-id (or (get-text-property (point) 'taut-channel-id)
+                               (and (boundp 'taut-current-channel-id) taut-current-channel-id)))
+          (chan-choices (mapcar (lambda (c) (cons (taut-channel-name c) (taut-channel-id c)))
+                                (taut-model-get-channels-list)))
+          (channel-id (if default-chan-id
+                          default-chan-id
+                        (let ((choice (completing-read "Archive Channel: " (mapcar #'car chan-choices) nil t)))
+                          (cdr (assoc choice chan-choices))))))
+     (list channel-id)))
+  (when channel-id
+    (let ((chan-name (or (and (taut-model-get-channel channel-id) (taut-channel-name (taut-model-get-channel channel-id))) channel-id)))
+      (when (y-or-n-p (format "Are you absolutely sure you want to archive #%s? " chan-name))
+        (message "Archiving #%s..." chan-name)
+        (condition-case err
+            (progn
+              (taut-api-archive-channel channel-id)
+              (message "Successfully archived channel #%s!" chan-name)
+              ;; If we archived the current message buffer's channel, switch away
+              (when (and (boundp 'taut-current-channel-id) (equal taut-current-channel-id channel-id))
+                (kill-buffer (current-buffer))))
+          (error
+           (message "Error archiving channel: %s" (error-message-string err))))))))
+
+;;;###autoload
+(defun taut-channel-list-members (channel-id)
+  "List all members of a channel."
+  (interactive
+   (let* ((default-chan-id (or (get-text-property (point) 'taut-channel-id)
+                               (and (boundp 'taut-current-channel-id) taut-current-channel-id)))
+          (chan-choices (mapcar (lambda (c) (cons (taut-channel-name c) (taut-channel-id c)))
+                                (taut-model-get-channels-list)))
+          (channel-id (if default-chan-id
+                          default-chan-id
+                        (let ((choice (completing-read "List Members of Channel: " (mapcar #'car chan-choices) nil t)))
+                          (cdr (assoc choice chan-choices))))))
+     (list channel-id)))
+  (when channel-id
+    (let ((chan-name (or (and (taut-model-get-channel channel-id) (taut-channel-name (taut-model-get-channel channel-id))) channel-id)))
+      (message "Fetching members of #%s..." chan-name)
+      (condition-case err
+          (let* ((member-ids (taut-api-get-channel-members channel-id))
+                 (buf (get-buffer-create (format "*Taut Members: #%s*" chan-name))))
+            (with-current-buffer buf
+              (let ((inhibit-read-only t))
+                (erase-buffer)
+                (special-mode)
+                (insert (propertize (format "👥 Members of #%s (%d total)\n" chan-name (length member-ids)) 'face 'bold))
+                (insert (propertize "================================================================================\n" 'face 'font-lock-comment-face))
+                (dolist (uid member-ids)
+                  (let* ((user (taut-model-get-user uid))
+                         (username (if user (taut-user-username user) uid))
+                         (real-name (if user (taut-user-real-name user) "Unknown User"))
+                         (presence (if user (taut-user-presence user) 'offline))
+                         (indicator (cond
+                                     ((and user (taut-user-is-huddling user))
+                                      (propertize "🎧 " 'face 'font-lock-warning-face))
+                                     ((eq presence 'online)
+                                      (propertize "● " 'face 'font-lock-string-face))
+                                     ((eq presence 'away)
+                                      (propertize "○ " 'face 'font-lock-comment-face))
+                                     (t
+                                      (propertize "○ " 'face 'font-lock-comment-face)))))
+                    (insert (format "  %s %s (%s) [ID: %s]\n"
+                                    indicator
+                                    (propertize (format "@%s" username) 'face 'bold)
+                                    real-name
+                                    uid))))
+                (insert (propertize "================================================================================\n" 'face 'font-lock-comment-face))
+                (insert "  [q] Close Panel\n")
+                (setq-local truncate-lines t)
+                (setq-local buffer-read-only t)))
+            (message "Found %d members in #%s!" (length member-ids) chan-name)
+            (pop-to-buffer buf))
+        (error
+         (message "Error fetching channel members: %s" (error-message-string err)))))))
+
 (provide 'taut)
 ;;; taut.el ends here

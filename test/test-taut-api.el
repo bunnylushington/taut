@@ -212,5 +212,75 @@
           (should (= (length requests) 1))
           (should (equal (car requests) '("conversations.info" ((channel . "C_PRIVATE_FE")) "GET"))))))))
 
+(ert-deftest taut-api-channel-lifecycle-test ()
+  "Test the channel lifecycle API functions: create, invite, kick, set-topic, archive."
+  (taut-model-clear-all)
+  (let ((taut-bot-token "mock-token")
+        (requests nil))
+    (cl-letf (((symbol-function 'taut-api--request)
+               (lambda (endpoint params method &optional _apptoken)
+                 (push (list endpoint params method) requests)
+                 (cond
+                  ((equal endpoint "conversations.create")
+                   '((ok . t)
+                     (channel . ((id . "C_NEW")
+                                 (name . "new-channel")
+                                 (is_private . nil)))))
+                  ((equal endpoint "conversations.info")
+                   '((ok . t)
+                     (channel . ((id . "C_NEW")
+                                 (name . "new-channel")
+                                 (is_private . nil)))))
+                  (t
+                   '((ok . t)))))))
+      
+      ;; 1. Test create channel
+      (let ((res (taut-api-create-channel "new-channel" nil)))
+        (should (equal (cdr (assoc 'id (cdr (assoc 'channel res)))) "C_NEW"))
+        ;; Verify conversations.create request was made
+        (should (member '("conversations.create" ((name . "new-channel") (is_private . nil)) "POST") requests)))
+
+      ;; 2. Test invite to channel
+      (setq requests nil)
+      (let ((res (taut-api-invite-to-channel "C_NEW" '("U1" "U2"))))
+        (should (cdr (assoc 'ok res)))
+        (should (equal (car requests) '("conversations.invite" ((channel . "C_NEW") (users . "U1,U2")) "POST"))))
+
+      ;; 3. Test kick from channel
+      (setq requests nil)
+      (let ((res (taut-api-kick-from-channel "C_NEW" "U1")))
+        (should (cdr (assoc 'ok res)))
+        (should (equal (car requests) '("conversations.kick" ((channel . "C_NEW") (user . "U1")) "POST"))))
+
+      ;; 4. Test set topic
+      (setq requests nil)
+      (let ((c (make-taut-channel :id "C_NEW" :name "new-channel" :type 'public)))
+        (taut-model-add-channel c)
+        (let ((res (taut-api-set-channel-topic "C_NEW" "Exciting topic!")))
+          (should (cdr (assoc 'ok res)))
+          (should (equal (car requests) '("conversations.setTopic" ((channel . "C_NEW") (topic . "Exciting topic!")) "POST")))
+          (should (equal (taut-channel-topic (taut-model-get-channel "C_NEW")) "Exciting topic!"))))
+
+      ;; 5. Test archive channel
+      (setq requests nil)
+      (let ((res (taut-api-archive-channel "C_NEW")))
+        (should (cdr (assoc 'ok res)))
+        (should (equal (car requests) '("conversations.archive" ((channel . "C_NEW")) "POST")))
+        ;; Check channel is removed from model
+        (should-not (taut-model-get-channel "C_NEW"))))))
+
+(ert-deftest taut-api-get-channel-members-test ()
+  "Test retrieving channel members user IDs."
+  (let ((taut-bot-token "mock-token")
+        (requests nil))
+    (cl-letf (((symbol-function 'taut-api--request)
+               (lambda (endpoint params method &optional _apptoken)
+                 (push (list endpoint params method) requests)
+                 '((ok . t)
+                   (members . ("U_ALICE" "U_BOB"))))))
+      (let ((res (taut-api-get-channel-members "C_DEV")))
+        (should (equal res '("U_ALICE" "U_BOB")))
+        (should (equal (car requests) '("conversations.members" ((channel . "C_DEV")) "GET")))))))
+
 (provide 'test-taut-api)
 ;;; test-taut-api.el ends here

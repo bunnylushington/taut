@@ -681,6 +681,14 @@ Preserves existing is-hidden state if already present."
     (taut-cache-save-channel chan))
   (taut-model-trigger-update))
 
+(defun taut-model-delete-channel (channel-id)
+  "Remove channel CHANNEL-ID from the active model database and cache."
+  (remhash channel-id taut-channels)
+  (remhash channel-id taut-messages)
+  (when (fboundp 'taut-cache-delete-channel)
+    (taut-cache-delete-channel channel-id))
+  (taut-model-trigger-update))
+
 (defun taut-model-delete-message (ts)
   "Remove message with timestamp TS from storage (both channels and threads)."
   (let ((found nil))

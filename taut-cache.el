@@ -131,6 +131,13 @@ Creates the necessary tables if they do not exist."
                             (taut-channel-topic chan)
                             (taut-channel-purpose chan))))))
 
+(defun taut-cache-delete-channel (channel-id)
+  "Delete channel with CHANNEL-ID and its messages from the SQLite database."
+  (let ((db (taut-cache--get-db)))
+    (when db
+      (sqlite-execute db "DELETE FROM channels WHERE id = ?" (list channel-id))
+      (sqlite-execute db "DELETE FROM messages WHERE channel_id = ?" (list channel-id)))))
+
 (defun taut-cache-save-message (msg)
   "Save MSG (a `taut-message' struct) to the SQLite database."
   (let ((db (taut-cache--get-db)))

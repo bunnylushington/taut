@@ -78,6 +78,12 @@
 (declare-function taut-compose-insert-reference "taut-compose")
 (declare-function taut-search-quick "taut-search")
 (declare-function taut-search-advanced "taut-search")
+(declare-function taut-channel-create "taut")
+(declare-function taut-channel-invite "taut")
+(declare-function taut-channel-kick "taut")
+(declare-function taut-channel-set-topic "taut")
+(declare-function taut-channel-archive "taut")
+(declare-function taut-channel-list-members "taut")
 
 
 ;;;###autoload
@@ -95,6 +101,14 @@
     ("q" "Quit / Bury Pane"    quit-window :if (lambda () (not (eq major-mode 'taut-thread-mode))))
     ("Q" "Hard Quit Taut"      taut-quit)]
    
+   ["Channel Management"
+    ("C-c c" "Create Channel"    taut-channel-create)
+    ("C-c i" "Invite Member"     taut-channel-invite)
+    ("C-c k" "Kick Member"       taut-channel-kick)
+    ("C-c t" "Set/Edit Topic"    taut-channel-set-topic)
+    ("C-c a" "Archive/Delete"    taut-channel-archive)
+    ("C-c m" "List Members"      taut-channel-list-members)]
+
    ["Sidebar Actions"
     :if (lambda () (eq major-mode 'taut-sidebar-mode))
     ("TAB" "Toggle Section"     taut-sidebar-toggle-section-at-point)

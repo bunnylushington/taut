@@ -741,7 +741,59 @@ If TS is nil, use the timestamp of the latest message in memory."
         (taut-api--request "conversations.mark"
                            `((channel . ,channel-id)
                              (ts . ,resolved-ts))
-                           "POST")))))
+                            "POST")))))
+
+(defun taut-api-create-channel (name &optional is-private)
+  "Create a new channel with NAME.
+If IS-PRIVATE is non-nil, create a private channel."
+  (let* ((params `((name . ,name)
+                   (is_private . ,(if is-private t nil))))
+         (res (taut-api--request "conversations.create" params "POST"))
+         (chan-id (cdr (assoc 'id (cdr (assoc 'channel res))))))
+    (when chan-id
+      (taut-api-get-or-fetch-channel chan-id)
+      (taut-model-trigger-update))
+    res))
+
+(defun taut-api-invite-to-channel (channel-id user-ids)
+  "Invite USER-IDS (list of string user IDs) to CHANNEL-ID."
+  (let* ((users-str (if (listp user-ids) (mapconcat #'identity user-ids ",") user-ids))
+         (params `((channel . ,channel-id)
+                   (users . ,users-str)))
+         (res (taut-api--request "conversations.invite" params "POST")))
+    res))
+
+(defun taut-api-kick-from-channel (channel-id user-id)
+  "Remove USER-ID from CHANNEL-ID."
+  (let* ((params `((channel . ,channel-id)
+                   (user . ,user-id)))
+         (res (taut-api--request "conversations.kick" params "POST")))
+    res))
+
+(defun taut-api-set-channel-topic (channel-id topic)
+  "Set the topic of CHANNEL-ID to TOPIC."
+  (let* ((params `((channel . ,channel-id)
+                   (topic . ,topic)))
+         (res (taut-api--request "conversations.setTopic" params "POST"))
+         (chan (taut-model-get-channel channel-id)))
+    (when chan
+      (setf (taut-channel-topic chan) topic)
+      (taut-model-trigger-update))
+    res))
+
+(defun taut-api-archive-channel (channel-id)
+  "Archive CHANNEL-ID."
+  (let* ((params `((channel . ,channel-id)))
+         (res (taut-api--request "conversations.archive" params "POST")))
+    (taut-model-delete-channel channel-id)
+    res))
+
+(defun taut-api-get-channel-members (channel-id)
+  "Retrieve list of member user IDs for CHANNEL-ID."
+  (let* ((params `((channel . ,channel-id)))
+         (res (taut-api--request "conversations.members" params "GET"))
+         (members (cdr (assoc 'members res))))
+    members))
 
 (defun taut-api-open-dm (user-id)
   "Open or create a direct message channel with USER-ID."
