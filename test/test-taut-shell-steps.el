@@ -75,34 +75,60 @@
           (kill-buffer buf))))))
 
 (ert-deftest taut-shell-steps-reset-test ()
-  "Test resetting all step statuses back to Pending."
-  (let ((cmds '("echo foo" "echo bar")))
-    (save-window-excursion
-      (taut-shell-steps-open cmds)
-      (let ((buf (get-buffer "*Taut Shell Steps*")))
-        (should buf)
-        (with-current-buffer buf
-          ;; Artificially set status of some steps
-          (setq taut-shell-steps-data
-                (mapcar (lambda (s)
-                          (if (= (plist-get s :idx) 1)
-                              (plist-put s :status "Success")
-                            (plist-put s :status "Failed")))
-                        taut-shell-steps-data))
-          (taut-shell-steps-render)
-          
-          ;; Verify statuses are updated
-          (should (equal (plist-get (car taut-shell-steps-data) :status) "Success"))
-          (should (equal (plist-get (cadr taut-shell-steps-data) :status) "Failed"))
-          
-          ;; Trigger reset
-          (taut-shell-steps-reset)
-          
-          ;; Verify they are all "Pending" now
-          (should (equal (plist-get (car taut-shell-steps-data) :status) "Pending"))
-          (should (equal (plist-get (cadr taut-shell-steps-data) :status) "Pending"))
-          
-          (kill-buffer buf))))))
+  "Test resetting all step statuses back to Pending and restoring directory."
+  (let* ((cmds '("echo foo" "echo bar"))
+         (initial-dir (make-temp-file "taut-steps-reset-initial-" t))
+         (new-dir (make-temp-file "taut-steps-reset-new-" t)))
+    (unwind-protect
+        (save-window-excursion
+          (taut-shell-steps-open cmds initial-dir)
+          (let ((buf (get-buffer "*Taut Shell Steps*")))
+            (should buf)
+            (with-current-buffer buf
+              ;; Artificially change directory and set statuses
+              (setq taut-shell-steps-directory new-dir)
+              (setq taut-shell-steps-data
+                    (mapcar (lambda (s)
+                              (plist-put s :status "Success"))
+                            taut-shell-steps-data))
+              (taut-shell-steps-render)
+
+              (should (equal taut-shell-steps-directory new-dir))
+              (should (equal (plist-get (car taut-shell-steps-data) :status) "Success"))
+
+              ;; Trigger reset
+              (taut-shell-steps-reset)
+
+              ;; Verify statuses and directory are restored
+              (should (equal taut-shell-steps-directory (expand-file-name initial-dir)))
+              (should (equal (plist-get (car taut-shell-steps-data) :status) "Pending"))
+              (should (equal (plist-get (cadr taut-shell-steps-data) :status) "Pending"))
+
+              (kill-buffer buf))))
+      (delete-directory initial-dir t)
+      (delete-directory new-dir t))))
+
+(ert-deftest taut-shell-steps-change-dir-create-test ()
+  "Test that changing to a non-existent directory prompts for creation."
+  (let* ((cmds '("echo foo"))
+         (temp-base (make-temp-file "taut-steps-cd-test-" t))
+         (non-existent-dir (expand-file-name "nested/subdir/here" temp-base)))
+    (unwind-protect
+        (save-window-excursion
+          (taut-shell-steps-open cmds temp-base)
+          (let ((buf (get-buffer "*Taut Shell Steps*")))
+            (should buf)
+            (with-current-buffer buf
+              ;; Mock read-directory-name to return our non-existent directory
+              ;; Mock yes-or-no-p to return t (approving creation)
+              (cl-letf (((symbol-function 'read-directory-name) (lambda (&rest _) non-existent-dir))
+                        ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+                (taut-shell-steps-change-dir)
+                ;; Verify that the directory was created and directory was updated
+                (should (file-directory-p non-existent-dir))
+                (should (equal taut-shell-steps-directory non-existent-dir))))
+            (kill-buffer buf)))
+      (delete-directory temp-base t))))
 
 (provide 'test-taut-shell-steps)
 ;;; test-taut-shell-steps.el ends here

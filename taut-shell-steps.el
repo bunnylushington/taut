@@ -46,6 +46,9 @@
 (defvar-local taut-shell-steps-directory nil
   "The directory in which steps will be run.")
 
+(defvar-local taut-shell-steps-initial-directory nil
+  "The initial directory in which steps panel was opened.")
+
 (defvar taut-shell-steps-mode-map
   (let ((map (make-keymap)))
     (suppress-keymap map)
@@ -60,6 +63,7 @@
     (define-key map "j" #'next-line)
     (define-key map "k" #'previous-line)
     (define-key map "g" #'taut-shell-steps-reset)
+    (define-key map "D" #'taut-shell-steps-change-dir)
     (define-key map "R" #'taut-shell-steps-run-all)
     map)
   "Keymap for `taut-shell-steps-mode'.")
@@ -92,7 +96,8 @@
          (dir (or initial-dir default-directory "~/")))
     (with-current-buffer buf
       (taut-shell-steps-mode)
-      (setq taut-shell-steps-directory (expand-file-name dir))
+      (setq taut-shell-steps-initial-directory (expand-file-name dir))
+      (setq taut-shell-steps-directory taut-shell-steps-initial-directory)
       ;; Initialize data structure
       (setq taut-shell-steps-data nil)
       (let ((idx 1))
@@ -128,9 +133,11 @@
                                     m))
               "\n"))
     
-    ;; Actions help line
-    (let* ((help-str "💡 [r/click] Run  [e] Edit  [a] Add  [d] Delete  [u/o] Move Up/Dn  [g] Reset  [R] Run All  [q] Quit"))
-      (insert (propertize help-str 'face '(:slant italic :foreground "#8a8a8a")) "\n\n"))
+    ;; Actions help lines (split into two because they grew too long)
+    (let* ((help-str1 "💡 [r/click] Run   [e] Edit       [a] Add          [d] Delete   [q] Quit")
+           (help-str2 "   [u/o] Move Up/Dn [g] Reset Steps [D] Change Dir   [R] Run All"))
+      (insert (propertize help-str1 'face '(:slant italic :foreground "#8a8a8a")) "\n"
+              (propertize help-str2 'face '(:slant italic :foreground "#8a8a8a")) "\n\n"))
     
     ;; Table Headers
     ;; Columns: No (5), Command (fill), Status (12), Action (22)
@@ -390,17 +397,28 @@
         (mapcar (lambda (s)
                   (plist-put s :status "Pending"))
                 taut-shell-steps-data))
+  (when taut-shell-steps-initial-directory
+    (setq taut-shell-steps-directory taut-shell-steps-initial-directory))
   (taut-shell-steps-render)
-  (message "All steps reset to Pending."))
+  (message "All steps reset to Pending and execution directory restored."))
 
 (defun taut-shell-steps-change-dir ()
-  "Prompt to change the execution directory."
+  "Prompt to change the execution directory. If the directory does not exist, ask to create it."
   (interactive)
-  (let ((new-dir (read-directory-name "Set execution directory: " taut-shell-steps-directory)))
-    (when (file-directory-p new-dir)
-      (setq taut-shell-steps-directory (expand-file-name new-dir))
+  (let* ((new-dir (expand-file-name (read-directory-name "Set execution directory: " taut-shell-steps-directory)))
+         (exists (file-directory-p new-dir)))
+    (cond
+     (exists
+      (setq taut-shell-steps-directory new-dir)
       (taut-shell-steps-render)
-      (message "Execution directory set to %s" taut-shell-steps-directory))))
+      (message "Execution directory set to %s" taut-shell-steps-directory))
+     ((yes-or-no-p (format "Directory %s does not exist. Create it? " new-dir))
+      (make-directory new-dir t)
+      (setq taut-shell-steps-directory new-dir)
+      (taut-shell-steps-render)
+      (message "Created and set execution directory to %s" taut-shell-steps-directory))
+     (t
+      (message "Execution directory change cancelled.")))))
 
 (defun taut-shell-steps-run-all ()
   "Sequentially execute all remaining pending steps from start to finish."
