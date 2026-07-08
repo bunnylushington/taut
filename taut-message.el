@@ -496,44 +496,50 @@ Edits made in this buffer can be committed back to the chat using \\[taut-code-b
         (lang (get-text-property (point) 'taut-code-block-lang)))
     (if (not code)
         (message "No code block found at point.")
-      (when (y-or-n-p (format "Evaluate this %s code block?" (upcase lang)))
-        (let ((mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
-                             lang)))
-          (cond
-           ;; Emacs Lisp evaluation
-           ((member mode-base '("elisp" "emacs-lisp" emacs-lisp))
-            (condition-case err
-                (let ((result (eval (car (read-from-string (concat "(progn " code "\n)"))))))
-                  (message "Eval result: %S" result))
-              (error (message "Evaluation error: %s" (error-message-string err)))))
-           
-           ;; Subprocess execution for shell, python, elixir, etc.
-           (t
-            (let* ((interpreter (cdr (assoc-string mode-base
-                                                  '(("python" . "python3")
-                                                    ("elixir" . "elixir")
-                                                    ("ruby" . "ruby")
-                                                    ("js" . "node")
-                                                    ("javascript" . "node")
-                                                    ("ts" . "ts-node")
-                                                    ("sh" . "bash")
-                                                    ("bash" . "bash")
-                                                    ("shell" . "bash"))
-                                                  t)))
-                   (cmd (or interpreter (and (stringp mode-base) mode-base) "bash")))
-              (message "Executing code block with %s..." cmd)
-              (let ((buf (get-buffer-create "*Taut Code Output*")))
-                (with-current-buffer buf
-                  (let ((inhibit-read-only t))
-                    (erase-buffer)
-                    (special-mode)
-                    (local-set-key (kbd "q") nil)
-                    (insert (format "=== Execution of %s block ===\n\n" (upcase lang)))))
-                (pop-to-buffer buf)
-                (let ((process-connection-type nil)) ; use pipe
-                  (let ((proc (start-process "taut-eval" buf cmd)))
-                    (process-send-string proc code)
-                    (process-send-eof proc))))))))))))
+      (let ((mode-base (or (and lang (cdr (assoc-string lang taut-code-block-language-alist t)))
+                           lang)))
+        (cond
+         ;; If this is a shell/bash block or contains # @taut-runnable, open in the steps runner window!
+         ((or (member mode-base '("sh" "bash" "shell" "zsh"))
+              (and code (string-match-p "^# @taut-runnable" (taut-message--trim code))))
+          (let* ((lines (split-string code "\n" t))
+                 (cmd-lines (cl-remove-if (lambda (l) (string-match-p "^# @taut-runnable" (taut-message--trim l))) lines))
+                 (clean-cmds (cl-remove-if (lambda (c) (or (string-empty-p (taut-message--trim c)) (string-prefix-p "#" (taut-message--trim c)))) cmd-lines)))
+            (if clean-cmds
+                (taut-shell-steps-open clean-cmds)
+              (message "No executable commands found in this block."))))
+
+         ;; Emacs Lisp evaluation
+         ((member mode-base '("elisp" "emacs-lisp" emacs-lisp))
+          (condition-case err
+              (let ((result (eval (car (read-from-string (concat "(progn " code "\n)"))))))
+                (message "Eval result: %S" result))
+            (error (message "Evaluation error: %s" (error-message-string err)))))
+         
+         ;; Subprocess execution for python, elixir, etc.
+         (t
+          (let* ((interpreter (cdr (assoc-string mode-base
+                                                '(("python" . "python3")
+                                                  ("elixir" . "elixir")
+                                                  ("ruby" . "ruby")
+                                                  ("js" . "node")
+                                                  ("javascript" . "node")
+                                                  ("ts" . "ts-node"))
+                                                t)))
+                 (cmd (or interpreter (and (stringp mode-base) mode-base) "bash")))
+            (message "Executing code block with %s..." cmd)
+            (let ((buf (get-buffer-create "*Taut Code Output*")))
+              (with-current-buffer buf
+                (let ((inhibit-read-only t))
+                  (erase-buffer)
+                  (special-mode)
+                  (local-set-key (kbd "q") nil)
+                  (insert (format "=== Execution of %s block ===\n\n" (upcase lang)))))
+              (pop-to-buffer buf)
+              (let ((process-connection-type nil)) ; use pipe
+                (let ((proc (start-process "taut-eval" buf cmd)))
+                  (process-send-string proc code)
+                  (process-send-eof proc)))))))))))
 
 ;;;###autoload
 (defalias 'taut-code-block-edit #'taut-code-block-view)

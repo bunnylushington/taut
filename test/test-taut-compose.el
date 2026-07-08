@@ -326,5 +326,75 @@
         (taut-compose-from-atuin-history)
         (should (equal (buffer-string) "```bash\n# @taut-runnable\ngit status\nls -la\n```\n"))))))
 
+(ert-deftest taut-compose-markdown-to-mrkdwn-test ()
+  "Test all markdown translations in taut-compose-markdown-to-mrkdwn."
+  ;; 1. Inline formatting (bold, italics, strikethrough)
+  (should (equal (taut-compose-markdown-to-mrkdwn "This is **bold** and *italics* and ~~strikethrough~~.")
+                 "This is *bold* and _italics_ and ~strikethrough~."))
+  (should (equal (taut-compose-markdown-to-mrkdwn "Double __bold__ and single _italics_.")
+                 "Double *bold* and single _italics_."))
+
+  ;; 2. Block-level formatting (headings, lists, quotes)
+  (should (equal (taut-compose-markdown-to-mrkdwn "# Heading 1\n## Heading 2\n- Item 1\n* Item 2\n> Simple quote")
+                 "*Heading 1*\n*Heading 2*\n• Item 1\n• Item 2\n> Simple quote"))
+
+  ;; 3. Links [label](url)
+  (should (equal (taut-compose-markdown-to-mrkdwn "Check out [Taut](https://github.com/bunnylushington/taut) for Emacs!")
+                 "Check out <https://github.com/bunnylushington/taut|Taut> for Emacs!"))
+
+  ;; 4. Protected Code Blocks & Inline Code
+  (should (equal (taut-compose-markdown-to-mrkdwn "Do not touch `**bold**` inside inline code.")
+                 "Do not touch `**bold**` inside inline code."))
+  (should (equal (taut-compose-markdown-to-mrkdwn "Multi-line code:\n```python\n# Do not touch [Google](https://google.com)\nif **bold**:\n    pass\n```")
+                 "Multi-line code:\n```python\n# Do not touch [Google](https://google.com)\nif **bold**:\n    pass\n```")))
+
+(ert-deftest taut-compose-toggle-markdown-test ()
+  "Test toggling the markdown translation flag."
+  (let ((taut-compose-markdown-p t))
+    (taut-compose-toggle-markdown)
+    (should-not taut-compose-markdown-p)
+    (taut-compose-toggle-markdown)
+    (should taut-compose-markdown-p)))
+
+(ert-deftest taut-compose-toggle-preview-test ()
+  "Test toggling live preview window and buffer creation."
+  (taut-initialize-mock-data)
+  (let ((taut-bot-token nil)
+        (taut-current-user-id "U_ME"))
+    (cl-letf (((symbol-function 'pop-to-buffer) (lambda (buf &optional _action) buf)))
+      (taut-compose-open "C_GENERAL")
+      (with-current-buffer "*Taut Compose*"
+        ;; 1. Open preview
+        (taut-compose-toggle-preview)
+        (should (get-buffer "*Taut Compose Preview*"))
+        (should (get-buffer-window "*Taut Compose Preview*"))
+        
+        ;; 2. Close preview
+        (taut-compose-toggle-preview)
+        (should-not (get-buffer "*Taut Compose Preview*"))
+        (should-not (get-buffer-window "*Taut Compose Preview*"))
+        
+        ;; Cleanup
+        (taut-compose-abort)))))
+
+(ert-deftest taut-compose-preview-update-test ()
+  "Test updating the preview buffer contents dynamically."
+  (taut-initialize-mock-data)
+  (let ((taut-bot-token nil)
+        (taut-current-user-id "U_ME"))
+    (cl-letf (((symbol-function 'pop-to-buffer) (lambda (buf &optional _action) buf)))
+      (taut-compose-open "C_GENERAL")
+      (with-current-buffer "*Taut Compose*"
+        (insert "Here is **bold** text.")
+        (taut-compose-toggle-preview)
+        
+        (with-current-buffer "*Taut Compose Preview*"
+          ;; Ensure bold text is formatted (represented as bold face on the text)
+          (goto-char (point-min))
+          (should (re-search-forward "bold" nil t))
+          (should (eq (get-text-property (match-beginning 0) 'face) 'bold)))
+        
+        (taut-compose-abort)))))
+
 (provide 'test-taut-compose)
 ;;; test-taut-compose.el ends here

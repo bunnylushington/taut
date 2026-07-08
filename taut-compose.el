@@ -20,6 +20,7 @@
 (declare-function taut-compose-dispatch "taut-transient")
 (declare-function taut-emoticon-translate-string "taut-message")
 (declare-function taut-emoji-translate "taut-message")
+(declare-function taut-message--insert-formatted-text "taut-message")
 
 (defvar taut-current-thread-ts)
 (defvar taut-current-user-id)
@@ -38,6 +39,13 @@
   :type '(list string)
   :group 'taut-compose)
 
+(defcustom taut-compose-markdown-p t
+  "Toggle automatic translation of standard Markdown to Slack's custom `mrkdwn' syntax.
+When non-nil, Markdown elements (like **bold**, _italics_, [links](url), bullet lists,
+and headings) are parsed and translated before sending or rendering in live preview."
+  :type 'boolean
+  :group 'taut-compose)
+
 ;;;; Buffer-Local Variables
 
 (defvar-local taut-compose-channel-id nil
@@ -48,6 +56,9 @@
 
 (defvar-local taut-compose-edit-ts nil
   "The timestamp of the message being edited, or nil if posting new.")
+
+(defvar-local taut-compose--preview-timer nil
+  "Idle timer for updating the compose preview buffer.")
 
 ;;;; Keymap & Major Mode
 
@@ -63,6 +74,8 @@
     (define-key map (kbd "C-c C-u") #'taut-compose-insert-user-mention)
     (define-key map (kbd "C-c @") #'taut-compose-insert-user-mention)
     (define-key map (kbd "C-c C-m") #'taut-compose-dispatch)
+    (define-key map (kbd "C-c C-p") #'taut-compose-toggle-preview)
+    (define-key map (kbd "C-c C-t") #'taut-compose-toggle-markdown)
     map)
   "Keymap for `taut-compose-mode`.")
 
@@ -86,6 +99,10 @@
   (setq word-wrap t)
   (visual-line-mode 1)
   (add-hook 'post-self-insert-hook #'taut-compose--post-self-insert nil t)
+  ;; Trigger preview update asynchronously as the user moves point/types
+  (add-hook 'post-command-hook #'taut-compose--post-command-preview-trigger nil t)
+  ;; Ensure timer is cleanly cancelled when buffer dies
+  (add-hook 'kill-buffer-hook #'taut-compose--cleanup-preview-timer nil t)
   ;; Register our custom Completion-At-Point Function (Capf)
   (add-hook 'completion-at-point-functions #'taut-compose-capf nil t)
   ;; Ensure Corfu manages completions if present
@@ -190,30 +207,33 @@ in the `taut-compose-markup' property."
   ;; Translate any remaining emoticons (e.g. pasted or typed fast) before sending
   (let* ((text (taut-compose--get-text-with-markup))
          (translated-text (taut-emoticon-translate-string text))
+         (final-text (if taut-compose-markdown-p
+                         (taut-compose-markdown-to-mrkdwn translated-text)
+                       translated-text))
          (chan-id taut-compose-channel-id)
          (thread-ts taut-compose-thread-ts)
          (edit-ts taut-compose-edit-ts))
-    (if (string-blank-p translated-text)
+    (if (string-blank-p final-text)
         (message "Cannot send an empty message.")
       ;; Post or update the message!
       (if (and (boundp 'taut-bot-token) taut-bot-token)
           (if edit-ts
-              (taut-api-update-message chan-id edit-ts translated-text)
-            (taut-api-post-message chan-id translated-text thread-ts))
+              (taut-api-update-message chan-id edit-ts final-text)
+            (taut-api-post-message chan-id final-text thread-ts))
         ;; Fallback to offline/mock
         (if edit-ts
             (let ((m (taut-model-get-message-by-ts edit-ts)))
               (when m
-                (setf (taut-message-text m) translated-text)
+                (setf (taut-message-text m) final-text)
                 (taut-model-trigger-update)))
           (let* ((ts (format "%d.0000" (time-convert nil 'integer)))
-                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) translated-text)))
+                 (is-mention (string-match-p (regexp-quote (format "<@%s>" taut-current-user-id)) final-text)))
             (taut-model-add-message
              (make-taut-message
               :id (concat "msg_" ts)
               :channel-id chan-id
               :user-id taut-current-user-id
-              :text translated-text
+              :text final-text
               :ts ts
               :thread-ts thread-ts
               :reply-count 0
@@ -234,10 +254,15 @@ in the `taut-compose-markup' property."
 (defun taut-compose-abort ()
   "Abort composition, killing the window and buffer."
   (interactive)
-  (let ((win (get-buffer-window "*Taut Compose*")))
+  (let ((win (get-buffer-window "*Taut Compose*"))
+        (p-win (get-buffer-window "*Taut Compose Preview*")))
     (when win
       (delete-window win))
-    (kill-buffer "*Taut Compose*")))
+    (when p-win
+      (delete-window p-win))
+    (kill-buffer "*Taut Compose*")
+    (when (get-buffer "*Taut Compose Preview*")
+      (kill-buffer "*Taut Compose Preview*"))))
 
 ;;;; Formatting Helpers
 
@@ -275,7 +300,7 @@ Insert them as a runnable code block."
              (process-environment (cons (format "ATUIN_SESSION=%s" session-id)
                                         process-environment))
              (history-str (shell-command-to-string history-cmd))
-             (candidates (delete-dups (split-string history-str "\n" t)))
+             (candidates (delete-dups (nreverse (split-string history-str "\n" t))))
              (start-pos (point))
              (insert-marker nil)
              (selected-count 0)
@@ -586,6 +611,230 @@ is found, otherwise nil."
                    (custom-url "  [custom]")
                    (emoji-char (format "  %s" emoji-char))
                    (t ""))))))))))
+
+;;;; =========================================================================
+;;;; 📝 Markdown Translation & Live Preview Engine
+;;;; =========================================================================
+
+;;;###autoload
+(defun taut-compose-markdown-to-mrkdwn (text)
+  "Translate standard Markdown in TEXT to Slack's custom `mrkdwn' syntax."
+  (if (string-blank-p text)
+      ""
+    (with-temp-buffer
+      (insert text)
+      
+      ;; 1. Protect triple-backtick code blocks
+      (goto-char (point-min))
+      (while (re-search-forward "```[a-zA-Z0-9-]*\\(?:\n\\|.\\)*?```" nil t)
+        (put-text-property (match-beginning 0) (match-end 0) 'taut-protected t))
+        
+      ;; 2. Protect inline backtick code blocks
+      (goto-char (point-min))
+      (while (re-search-forward "`[^`\n]+`" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0)))
+          (unless (get-text-property start 'taut-protected)
+            (put-text-property start end 'taut-protected t))))
+            
+      ;; 3. Handle Block-level elements line-by-line (headings, blockquotes, bullet lists)
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((start (line-beginning-position))
+              (end (line-end-position)))
+          (unless (get-text-property start 'taut-protected)
+            (let ((line (buffer-substring-no-properties start end)))
+              ;; A. Headings: "# heading" -> "*heading*"
+              (cond
+               ((string-match "^\\([ \t]*\\)\\(#+\\)[ \t]+\\([^\n]+\\)$" line)
+                (let ((indent (match-string 1 line))
+                      (heading (match-string 3 line)))
+                  (delete-region start end)
+                  (insert (format "%s*%s*" indent heading))
+                  (put-text-property start (point) 'taut-protected t)))
+                  
+               ;; B. Blockquotes: "> text" -> "> text"
+               ((string-match "^\\([ \t]*\\)>[ \t]*\\([^\n]+\\)$" line)
+                (let ((indent (match-string 1 line))
+                      (content (match-string 2 line)))
+                  (delete-region start end)
+                  (insert (format "%s> %s" indent content))
+                  (put-text-property start (point) 'taut-protected t)))
+                  
+               ;; C. Bullet lists: "- item" or "* item" -> "• item"
+               ((string-match "^\\([ \t]*\\)\\([-*]\\)[ \t]+\\([^\n]+\\)$" line)
+                (let ((indent (match-string 1 line))
+                      (content (match-string 3 line)))
+                  (delete-region start end)
+                  (insert (format "%s• %s" indent content))
+                  (put-text-property start (point) 'taut-protected t)))))))
+        (forward-line 1))
+        
+      ;; 4. Handle Inline elements (global search skipping protected text)
+      
+      ;; 4.1: Links [label](url) -> <url|label>
+      (goto-char (point-min))
+      (while (re-search-forward "\\[\\([^]]+?\\)\\](\\([^)\n]+?\\))" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0))
+              (label (match-string 1))
+              (url (match-string 2)))
+          (unless (get-text-property start 'taut-protected)
+            (delete-region start end)
+            (insert (format "<%s|%s>" url label))
+            (put-text-property start (point) 'taut-protected t)
+            (goto-char (point-min)))))
+            
+      ;; 4.2: Strikethrough ~~text~~ -> ~text~
+      (goto-char (point-min))
+      (while (re-search-forward "~~\\([^\n~]+?\\)~~" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0))
+              (content (match-string 1)))
+          (unless (get-text-property start 'taut-protected)
+            (delete-region start end)
+            (insert (format "~%s~" content))
+            (put-text-property start (point) 'taut-protected t)
+            (goto-char (point-min)))))
+            
+      ;; 4.3: Bold **text** -> *text*
+      (goto-char (point-min))
+      (while (re-search-forward "\\*\\*\\([^\n*]+?\\)\\*\\*" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0))
+              (content (match-string 1)))
+          (unless (get-text-property start 'taut-protected)
+            (delete-region start end)
+            (insert (format "*%s*" content))
+            (put-text-property start (point) 'taut-protected t)
+            (goto-char (point-min)))))
+            
+      ;; 4.4: Bold __text__ -> *text*
+      (goto-char (point-min))
+      (while (re-search-forward "__\\([^\n_]+?\\)__" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0))
+              (content (match-string 1)))
+          (unless (get-text-property start 'taut-protected)
+            (delete-region start end)
+            (insert (format "*%s*" content))
+            (put-text-property start (point) 'taut-protected t)
+            (goto-char (point-min)))))
+            
+      ;; 4.5: Italics *text* -> _text_
+      (goto-char (point-min))
+      (while (re-search-forward "\\*\\([^\n*]+?\\)\\*" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0))
+              (content (match-string 1)))
+          (unless (get-text-property start 'taut-protected)
+            (delete-region start end)
+            (insert (format "_%s_" content))
+            (put-text-property start (point) 'taut-protected t)
+            (goto-char (point-min)))))
+            
+      ;; 4.6: Italics _text_ -> _text_
+      (goto-char (point-min))
+      (while (re-search-forward "_\\([^\n_]+?\\)_" nil t)
+        (let ((start (match-beginning 0))
+              (end (match-end 0))
+              (content (match-string 1)))
+          (unless (get-text-property start 'taut-protected)
+            (put-text-property start end 'taut-protected t)
+            (goto-char (point-min)))))
+
+      (buffer-substring-no-properties (point-min) (point-max)))))
+
+;;;###autoload
+(defun taut-compose-toggle-markdown ()
+  "Toggle standard Markdown to Slack `mrkdwn' translation."
+  (interactive)
+  (setq taut-compose-markdown-p (not taut-compose-markdown-p))
+  (message "Taut Markdown translation: %s" (if taut-compose-markdown-p "ENABLED" "DISABLED"))
+  (when (get-buffer-window "*Taut Compose Preview*")
+    (taut-compose-preview-update)))
+
+;;;###autoload
+(defun taut-compose-preview-update ()
+  "Force-update the active Taut compose preview buffer."
+  (interactive)
+  (taut-compose-preview-update-from-composer (current-buffer)))
+
+(defun taut-compose-preview-update-from-composer (composer-buf)
+  "Update the preview buffer using text from COMPOSER-BUF."
+  (when (buffer-live-p composer-buf)
+    (let ((text (with-current-buffer composer-buf
+                  (taut-compose--get-text-with-markup)))
+          (markdown-p (with-current-buffer composer-buf
+                        taut-compose-markdown-p)))
+      (let ((translated (if markdown-p
+                            (taut-compose-markdown-to-mrkdwn text)
+                          text)))
+        (with-current-buffer (get-buffer-create "*Taut Compose Preview*")
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert "\n")
+            (taut-message--insert-formatted-text translated "  ")
+            (set-buffer-modified-p nil)))))))
+
+(defun taut-compose--post-command-preview-trigger ()
+  "Trigger live preview update asynchronously."
+  (when (get-buffer-window "*Taut Compose Preview*")
+    (when taut-compose--preview-timer
+      (cancel-timer taut-compose--preview-timer))
+    (setq taut-compose--preview-timer
+          (run-with-idle-timer 0.15 nil #'taut-compose-preview-update-from-composer (current-buffer)))))
+
+(defun taut-compose--cleanup-preview-timer ()
+  "Cancel active preview update timer."
+  (when taut-compose--preview-timer
+    (cancel-timer taut-compose--preview-timer)
+    (setq taut-compose--preview-timer nil)))
+
+;;;###autoload
+(defun taut-compose-toggle-preview ()
+  "Toggle the live Markdown/mrkdwn preview window for Taut message composition."
+  (interactive)
+  (let* ((preview-buf-name "*Taut Compose Preview*")
+         (preview-win (get-buffer-window preview-buf-name)))
+    (if preview-win
+        (progn
+          (delete-window preview-win)
+          (when (get-buffer preview-buf-name)
+            (kill-buffer preview-buf-name))
+          (message "Taut Live Preview: closed"))
+      (let* ((orig-window (selected-window))
+             (new-win (split-window-right)))
+        (with-selected-window new-win
+          (let ((buf (get-buffer-create preview-buf-name)))
+            (with-current-buffer buf
+              (unless (eq major-mode 'taut-compose-preview-mode)
+                (taut-compose-preview-mode)))
+            (switch-to-buffer buf)))
+        (taut-compose-preview-update)
+        (select-window orig-window)
+        (message "Taut Live Preview: opened")))))
+
+;;;; =========================================================================
+;;;; 👁️ Taut Compose Preview Mode Definition
+;;;; =========================================================================
+
+(defvar taut-compose-preview-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "q") (lambda () (interactive)
+                                (let ((win (get-buffer-window "*Taut Compose Preview*")))
+                                  (when win (delete-window win))
+                                  (kill-buffer "*Taut Compose Preview*"))))
+    map)
+  "Keymap for `taut-compose-preview-mode'.")
+
+(define-derived-mode taut-compose-preview-mode special-mode "Taut-Preview"
+  "Major mode for live previewing composed messages.
+
+\\{taut-compose-preview-mode-map}"
+  (setq-local header-line-format " 👁️ Taut Message Live Preview  [C-c C-c in composer to send, q to close]")
+  (setq word-wrap t)
+  (visual-line-mode 1))
 
 (provide 'taut-compose)
 ;;; taut-compose.el ends here
