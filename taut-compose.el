@@ -46,6 +46,8 @@ and headings) are parsed and translated before sending or rendering in live prev
   :type 'boolean
   :group 'taut-compose)
 
+(make-variable-buffer-local 'taut-compose-markdown-p)
+
 ;;;; Buffer-Local Variables
 
 (defvar-local taut-compose-channel-id nil

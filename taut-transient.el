@@ -79,6 +79,8 @@
 (declare-function taut-compose-insert-link "taut-compose")
 (declare-function taut-compose-insert-user-mention "taut-compose")
 (declare-function taut-compose-insert-reference "taut-compose")
+(declare-function taut-compose-toggle-preview "taut-compose")
+(declare-function taut-compose-toggle-markdown "taut-compose")
 (declare-function taut-search-quick "taut-search")
 (declare-function taut-search-advanced "taut-search")
 (declare-function taut-channel-create "taut")
@@ -204,7 +206,10 @@
     ("a" "Compose from Atuin"    taut-compose-from-atuin-history
      :if (lambda () (or (executable-find "atuin") (file-executable-p "/opt/homebrew/bin/atuin"))))
     ("l" "Insert Link"           taut-compose-insert-link)
-    ("u" "Insert User Mention"   taut-compose-insert-user-mention)]])
+    ("u" "Insert User Mention"   taut-compose-insert-user-mention)]
+   ["Rich Preview Options"
+    ("p" "Toggle Live Preview"   taut-compose-toggle-preview)
+    ("t" "Toggle Markdown Trans" taut-compose-toggle-markdown)]])
 
 (provide 'taut-transient)
 ;;; taut-transient.el ends here

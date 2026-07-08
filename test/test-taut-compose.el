@@ -356,6 +356,44 @@
     (taut-compose-toggle-markdown)
     (should taut-compose-markdown-p)))
 
+(ert-deftest taut-compose-markdown-p-buffer-local-test ()
+  "Test that taut-compose-markdown-p is buffer-local in compose buffers."
+  (taut-initialize-mock-data)
+  (let ((taut-bot-token nil)
+        (taut-current-user-id "U_ME")
+        (global-default taut-compose-markdown-p))
+    (cl-letf (((symbol-function 'pop-to-buffer) (lambda (buf &optional _action) buf)))
+      (let ((other-buf (generate-new-buffer " *temp-test*")))
+        (unwind-protect
+            (progn
+              ;; Open compose buffer
+              (taut-compose-open "C_GENERAL")
+              (let ((comp-buf (get-buffer "*Taut Compose*")))
+                (should comp-buf)
+                
+                ;; Initially both should equal the default (t)
+                (with-current-buffer comp-buf
+                  (should (eq taut-compose-markdown-p global-default)))
+                (with-current-buffer other-buf
+                  (should (eq taut-compose-markdown-p global-default)))
+                
+                ;; Toggle in compose buffer
+                (with-current-buffer comp-buf
+                  (taut-compose-toggle-markdown)
+                  (should (not (eq taut-compose-markdown-p global-default))))
+                
+                ;; Other buffer should remain unchanged
+                (with-current-buffer other-buf
+                  (should (eq taut-compose-markdown-p global-default)))
+                
+                ;; Clean up compose buffer
+                (with-current-buffer comp-buf
+                  (taut-compose-abort))))
+          ;; Cleanup temp buffer
+          (kill-buffer other-buf))))))
+
+
+
 (ert-deftest taut-compose-toggle-preview-test ()
   "Test toggling live preview window and buffer creation."
   (taut-initialize-mock-data)
