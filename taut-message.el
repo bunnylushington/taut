@@ -1374,6 +1374,7 @@ Uses PREFIX for left indentation."
                                      map)))
                       (if img
                           (progn
+                            (insert "\n")
                             (insert prefix)
                             (insert (propertize " " 'display img
                                                     'mouse-face 'highlight
