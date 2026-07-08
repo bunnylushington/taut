@@ -247,6 +247,7 @@
 (defvar taut-runnable-block-manage-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'taut-message-open-shell-steps-panel)
+    (define-key map (kbd "e") #'taut-message-open-shell-steps-panel)
     (define-key map [mouse-1] #'taut-message-open-shell-steps-panel)
     (define-key map [mouse-2] #'taut-message-open-shell-steps-panel)
     map)
@@ -263,11 +264,13 @@
       (message "No commands found for this block."))))
 
 (defun taut-runnable-cmd-execute (cmd)
-  "Execute CMD in a self-contained asynchronous subprocess managed by Taut."
+  "Execute CMD in a self-contained asynchronous subprocess managed by Taut.
+Returns the spawned process object."
   (require 'compile)
-  (let ((compilation-buffer-name-function
-         (lambda (_mode) "*Taut Command Run*")))
-    (compile cmd t)))
+  (let* ((compilation-buffer-name-function
+          (lambda (_mode) "*Taut Command Run*"))
+         (comp-buf (compile cmd t)))
+    (and comp-buf (get-buffer-process comp-buf))))
 
 (defun taut-runnable-cmd-run-at-point ()
   "Run the command under point direct."
@@ -1746,27 +1749,16 @@ Insert at point with premium faces and interactive links."
               ;; Render comment line in nice gray italic font
               (insert (propertize (format "   %s" display-cmd) 'face '(:slant italic :foreground "#8a8a8a")))
             ;; Render executable step with button overlays
-            (let* ((step-num-str (format "[%d] " idx)))
+            (let* ((step-num-str (format "[%d] " idx))
+                   (step-start (point)))
               (insert (propertize step-num-str 'face '(:weight bold :foreground "#ff8c00")))
-              (let ((cmd-start (point)))
-                (insert display-cmd)
-                ;; Make the command text itself clickable to run it!
-                (add-text-properties cmd-start (point)
-                                     (list 'face 'taut-message-code
-                                           'mouse-face 'highlight
-                                           'help-echo "Click to Edit & Run this command"
-                                           'taut-shell-cmd display-cmd
-                                           'keymap taut-runnable-cmd-map)))
-              (insert "  ")
-              ;; Append a clean, clickable [Run] button next to it
-              (let ((btn-start (point)))
-                (insert "[Run]")
-                (add-text-properties btn-start (point)
-                                     (list 'face '(:weight bold :foreground "#00aa00")
-                                           'mouse-face 'highlight
-                                           'help-echo "Run this command direct"
-                                           'taut-shell-cmd display-cmd
-                                           'keymap taut-runnable-cmd-run-map)))
+              (insert display-cmd)
+              (add-text-properties step-start (point)
+                                   (list 'face 'taut-message-code
+                                         'mouse-face 'highlight
+                                         'help-echo "Click or press 'e'/'RET' to manage steps table"
+                                         'taut-block-commands clean-cmds
+                                         'keymap taut-runnable-block-manage-map))
               (setq idx (1+ idx))))
           (insert "\n"))))
     

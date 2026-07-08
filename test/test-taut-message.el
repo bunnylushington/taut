@@ -223,27 +223,22 @@
     (goto-char (point-min))
     (let ((git-pos (search-forward "git status" nil t)))
       (should git-pos)
-      (let ((cmd (get-text-property (1- git-pos) 'taut-shell-cmd))
+      (let ((cmds (get-text-property (1- git-pos) 'taut-block-commands))
             (kmap (get-text-property (1- git-pos) 'keymap)))
-        (should (equal cmd "git status"))
-        (should (eq kmap taut-runnable-cmd-map))))
+        (should (equal cmds '("git status" "just test")))
+        (should (eq kmap taut-runnable-block-manage-map))))
     
     (goto-char (point-min))
     (let ((just-pos (search-forward "just test" nil t)))
       (should just-pos)
-      (let ((cmd (get-text-property (1- just-pos) 'taut-shell-cmd))
+      (let ((cmds (get-text-property (1- just-pos) 'taut-block-commands))
             (kmap (get-text-property (1- just-pos) 'keymap)))
-        (should (equal cmd "just test"))
-        (should (eq kmap taut-runnable-cmd-map))))
+        (should (equal cmds '("git status" "just test")))
+        (should (eq kmap taut-runnable-block-manage-map))))
 
-    ;; Search for "[Run]" buttons and verify keymap
+    ;; Verify no "[Run]" button exists in the buffer
     (goto-char (point-min))
-    (let ((run-pos (search-forward "[Run]" nil t)))
-      (should run-pos)
-      (let ((cmd (get-text-property (1- run-pos) 'taut-shell-cmd))
-            (kmap (get-text-property (1- run-pos) 'keymap)))
-        (should (equal cmd "git status"))
-        (should (eq kmap taut-runnable-cmd-run-map))))
+    (should-not (search-forward "[Run]" nil t))
 
     ;; Search for "[Manage Steps Table]" button and verify keymap & commands list
     (goto-char (point-min))

@@ -63,6 +63,26 @@
     map)
   "Keymap for `taut-shell-steps-mode'.")
 
+(defun taut-shell-steps--trim (str)
+  "Trim leading and trailing whitespace from STR."
+  (if str
+      (replace-regexp-in-string "\\`[ \t\n\r]+" "" (replace-regexp-in-string "[ \t\n\r]+\\'" "" str))
+    ""))
+
+(defun taut-shell-steps--handle-cd (cmd)
+  "If CMD is a cd command, update `taut-shell-steps-directory' and return the new path, else nil."
+  (let ((trimmed (taut-shell-steps--trim cmd)))
+    (when (string-match "^cd\\s-+\\(.+\\)$" trimmed)
+      (let* ((raw-path (match-string 1 trimmed))
+             (clean-path (if (and (string-prefix-p "\"" raw-path) (string-suffix-p "\"" raw-path))
+                             (substring raw-path 1 (1- (length raw-path)))
+                           (if (and (string-prefix-p "'" raw-path) (string-suffix-p "'" raw-path))
+                               (substring raw-path 1 (1- (length raw-path)))
+                             raw-path)))
+             (substituted (substitute-in-file-name clean-path))
+             (new-dir (expand-file-name substituted taut-shell-steps-directory)))
+        new-dir))))
+
 ;;;###autoload
 (defun taut-shell-steps-open (commands &optional initial-dir)
   "Open the interactive Taut Shell Steps panel with COMMANDS in INITIAL-DIR."
@@ -89,11 +109,11 @@
     (erase-buffer)
     
     ;; Header box
-    (let* ((width 76)
+    (let* ((width 90)
            (border-line (make-string width ?─)))
       (insert "┌" border-line "┐\n")
       (insert "│ " (propertize "🚀 TAUT INTERACTIVE SHELL STEPS PANEL" 'face 'taut-shell-steps-header)
-              (make-string (- width (string-width "🚀 TAUT INTERACTIVE SHELL STEPS PANEL") 1) ?\s) "│\n")
+              (make-string (max 0 (- width (string-width "🚀 TAUT INTERACTIVE SHELL STEPS PANEL") 1)) ?\s) "│\n")
       (insert "├" border-line "┤\n")
       
       ;; Directory line
@@ -101,7 +121,7 @@
              (dir-path (abbreviate-file-name taut-shell-steps-directory))
              (dir-str (concat dir-label dir-path))
              (dir-btn " [Change] ")
-             (pad-len (- width (string-width dir-str) (string-width dir-btn) 2)))
+             (pad-len (- width (string-width dir-str) (string-width dir-btn) 1)))
         (insert "│ " (propertize dir-label 'face '(:weight bold))
                 (propertize dir-path 'face '(:foreground "#3a86ff"))
                 (propertize dir-btn
@@ -116,27 +136,27 @@
       
       ;; Actions help line
       (let* ((help-str "💡 [r/click] Run  [e] Edit  [a] Add  [d] Delete  [u/o] Move Up/Dn  [R] Run All  [q] Quit")
-             (pad-len (- width (string-width help-str) 2)))
+             (pad-len (- width (string-width help-str) 1)))
         (insert "│ " (propertize help-str 'face '(:slant italic :foreground "#8a8a8a"))
                 (make-string (max 0 pad-len) ?\s) "│\n"))
       
       (insert "└" border-line "┘\n\n"))
     
     ;; Table Headers
-    ;; Columns: No (5), Command (fill), Status (12), Action (16)
-    (let* ((win-w (or (and (get-buffer-window (current-buffer)) (window-width (get-buffer-window (current-buffer)))) 80))
+    ;; Columns: No (5), Command (fill), Status (12), Action (22)
+    (let* ((width 90)
            (col-no-w 5)
            (col-status-w 12)
-           (col-action-w 20)
-           ;; Dynamic command column width
-           (col-cmd-w (max 30 (- win-w col-no-w col-status-w col-action-w 7)))
+           (col-action-w 22)
+           ;; Command column width takes remaining space exactly
+           (col-cmd-w (- width col-no-w col-status-w col-action-w 3))
            (border-top (concat "┌" (make-string col-no-w ?─) "┬" (make-string col-cmd-w ?─) "┬" (make-string col-status-w ?─) "┬" (make-string col-action-w ?─) "┐\n"))
            (border-mid (concat "├" (make-string col-no-w ?─) "┼" (make-string col-cmd-w ?─) "┼" (make-string col-status-w ?─) "┼" (make-string col-action-w ?─) "┤\n"))
            (border-bot (concat "└" (make-string col-no-w ?─) "┴" (make-string col-cmd-w ?─) "┴" (make-string col-status-w ?─) "┴" (make-string col-action-w ?─) "┘\n")))
       
       (insert border-top)
       ;; Column headers
-      (insert "│" (format " %-3s " "No.") "│" (format (format " %%-%ds " (1- col-cmd-w)) "Command") "│" (format " %-10s " "Status") "│" (format (format " %%-%ds " (1- col-action-w)) "Actions") "│\n")
+      (insert "│" (format " %-3s " "No.") "│" (format (format " %%-%ds " (- col-cmd-w 2)) "Command") "│" (format " %-10s " "Status") "│" (format (format " %%-%ds " (- col-action-w 2)) "Actions") "│\n")
       (insert border-mid)
       
       ;; Render each step row
@@ -152,7 +172,7 @@
                (cmd-disp (if (> (string-width cmd) (- col-cmd-w 2))
                              (concat (substring cmd 0 (- col-cmd-w 5)) "...")
                            cmd))
-               (cmd-str (format (format " %%-%ds " (1- col-cmd-w)) cmd-disp))
+               (cmd-str (format (format " %%-%ds " (- col-cmd-w 2)) cmd-disp))
                
                ;; Format status with face
                (status-face (cond
@@ -195,7 +215,7 @@
           
           ;; Insert row with cells separated by │
           (let ((row-start (point)))
-            (insert "│" no-str "│" cmd-str "│" status-str "│" (format (format "%%-%ds" col-action-w) action-str) "│\n")
+            (insert "│" no-str "│" cmd-str "│" status-str "│" (format (format " %%-%ds " (- col-action-w 2)) action-str) "│\n")
             ;; Put some row-level property to help point-based actions
             (add-text-properties row-start (point) (list 'taut-step-idx idx)))))
       
@@ -252,22 +272,28 @@
   (let ((step (cl-find-if (lambda (s) (= (plist-get s :idx) idx)) taut-shell-steps-data)))
     (when step
       (let* ((cmd (plist-get step :cmd))
-             (dir taut-shell-steps-directory)
-             (buf (current-buffer))
-             ;; Mark as Running
-             (_ (taut-shell-steps--update-status idx "Running"))
-             ;; Run asynchronously
-             (proc (let ((default-directory dir))
-                     (taut-runnable-cmd-execute cmd))))
-        (when proc
-          ;; Set sentinel to catch completion
-          (set-process-sentinel
-           proc
-           (lambda (_p event)
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (let ((status (if (string-match-p "finished" event) "Success" "Failed")))
-                   (taut-shell-steps--update-status idx status)))))))))))
+             (cd-dir (taut-shell-steps--handle-cd cmd)))
+        (if cd-dir
+            (progn
+              (setq taut-shell-steps-directory cd-dir)
+              (taut-shell-steps--update-status idx "Success")
+              (message "Changed directory to %s" cd-dir))
+          (let* ((dir taut-shell-steps-directory)
+                 (buf (current-buffer))
+                 ;; Mark as Running
+                 (_ (taut-shell-steps--update-status idx "Running"))
+                 ;; Run asynchronously
+                 (proc (let ((default-directory dir))
+                         (taut-runnable-cmd-execute cmd))))
+            (when proc
+              ;; Set sentinel to catch completion
+              (set-process-sentinel
+               proc
+               (lambda (_p event)
+                 (when (buffer-live-p buf)
+                   (with-current-buffer buf
+                     (let ((status (if (string-match-p "finished" event) "Success" "Failed")))
+                       (taut-shell-steps--update-status idx status)))))))))))))
 
 (defun taut-shell-steps--update-status (idx status)
   "Update status of step IDX to STATUS and re-render."
@@ -391,22 +417,29 @@
            (rest (cdr steps))
            (idx (plist-get first :idx))
            (cmd (plist-get first :cmd))
-           (dir taut-shell-steps-directory)
-           (buf (current-buffer))
-           (_ (taut-shell-steps--update-status idx "Running"))
-           (proc (let ((default-directory dir))
-                   (taut-runnable-cmd-execute cmd))))
-      (when proc
-        (set-process-sentinel
-         proc
-         (lambda (_p event)
-           (when (buffer-live-p buf)
-             (with-current-buffer buf
-               (let ((success (string-match-p "finished" event)))
-                 (taut-shell-steps--update-status idx (if success "Success" "Failed"))
-                 (if success
-                     (taut-shell-steps--run-sequentially rest)
-                   (message "Run All aborted due to failure on step %d." idx)))))))))))
+           (cd-dir (taut-shell-steps--handle-cd cmd)))
+      (if cd-dir
+          (progn
+            (setq taut-shell-steps-directory cd-dir)
+            (taut-shell-steps--update-status idx "Success")
+            (message "Changed directory to %s" cd-dir)
+            (taut-shell-steps--run-sequentially rest))
+        (let* ((dir taut-shell-steps-directory)
+               (buf (current-buffer))
+               (_ (taut-shell-steps--update-status idx "Running"))
+               (proc (let ((default-directory dir))
+                       (taut-runnable-cmd-execute cmd))))
+          (when proc
+            (set-process-sentinel
+             proc
+             (lambda (_p event)
+               (when (buffer-live-p buf)
+                 (with-current-buffer buf
+                   (let ((success (string-match-p "finished" event)))
+                     (taut-shell-steps--update-status idx (if success "Success" "Failed"))
+                     (if success
+                         (taut-shell-steps--run-sequentially rest)
+                       (message "Run All aborted due to failure on step %d." idx)))))))))))))
 
 (define-derived-mode taut-shell-steps-mode special-mode "Taut-Steps"
   "Major mode for the Taut interactive shell steps table."
