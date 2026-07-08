@@ -301,5 +301,42 @@
   (should (equal (taut-api-normalize-download-url nil)
                  nil)))
 
+(ert-deftest taut-api-open-dm-test ()
+  "Test opening a single or group direct message channel."
+  (taut-model-clear-all)
+  (taut-model-add-user (make-taut-user :id "U_ALICE" :username "alice" :real-name "Alice Smith"))
+  (taut-model-add-user (make-taut-user :id "U_BOB" :username "bob" :real-name "Bob Jones"))
+  (let ((taut-bot-token "mock-token")
+        (requests nil))
+    (cl-letf (((symbol-function 'taut-api--request)
+               (lambda (endpoint params method &optional _apptoken)
+                 (push (list endpoint params method) requests)
+                 '((ok . t)
+                   (channel . ((id . "MPIM_123")))))))
+      
+      ;; 1. Open single DM
+      (let ((res (taut-api-open-dm "U_ALICE")))
+        (should (equal res "MPIM_123"))
+        (should (equal (car requests) '("conversations.open" ((users . "U_ALICE")) "POST")))
+        (let ((chan (taut-model-get-channel "MPIM_123")))
+          (should chan)
+          (should (equal (taut-channel-name chan) "alice"))
+          (should (eq (taut-channel-type chan) 'dm))))
+      
+      (setq requests nil)
+      (taut-model-clear-all)
+      (taut-model-add-user (make-taut-user :id "U_ALICE" :username "alice" :real-name "Alice Smith"))
+      (taut-model-add-user (make-taut-user :id "U_BOB" :username "bob" :real-name "Bob Jones"))
+
+      ;; 2. Open group DM with list
+      (let ((res (taut-api-open-dm '("U_ALICE" "U_BOB"))))
+        (should (equal res "MPIM_123"))
+        (should (equal (car requests) '("conversations.open" ((users . "U_ALICE,U_BOB")) "POST")))
+        (let ((chan (taut-model-get-channel "MPIM_123")))
+          (should chan)
+          (should (equal (taut-channel-name chan) "alice,bob"))
+          (should (eq (taut-channel-type chan) 'dm)))))))
+
 (provide 'test-taut-api)
 ;;; test-taut-api.el ends here
+

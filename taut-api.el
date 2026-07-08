@@ -815,29 +815,42 @@ If IS-PRIVATE is non-nil, create a private channel."
          (members (cdr (assoc 'members res))))
     members))
 
-(defun taut-api-open-dm (user-id)
-  "Open or create a direct message channel with USER-ID."
-  (let* ((user-id (or user-id "unknown"))
-         (params `((users . ,user-id)))
+(defun taut-api-open-dm (user-ids)
+  "Open or create a direct message channel with USER-IDS (string or list of strings)."
+  (let* ((users-str (cond ((listp user-ids) (mapconcat #'identity user-ids ","))
+                          ((stringp user-ids) user-ids)
+                          (t "unknown")))
+         (params `((users . ,users-str)))
          (res (taut-api--request "conversations.open" params "POST"))
          (channel (cdr (assoc 'channel res))))
     (if (and (cdr (assoc 'ok res)) channel)
         (let* ((id (cdr (assoc 'id channel)))
-               (user (taut-model-get-user user-id))
-               (username (or (and user (taut-user-username user)) (concat "user-" user-id)))
-               (id (or id (concat "DM_FALLBACK_" user-id)))
+               (name (cond
+                      ;; Multi-user DM
+                      ((string-match-p "," users-str)
+                       (mapconcat (lambda (uid)
+                                    (let ((u (taut-model-get-user uid)))
+                                      (if u (taut-user-username u) uid)))
+                                  (split-string users-str ",")
+                                  ","))
+                      ;; Single-user DM
+                      (t
+                       (let ((u (taut-model-get-user users-str)))
+                         (or (and u (taut-user-username u)) (concat "user-" users-str))))))
+               (id (or id (concat "DM_FALLBACK_" users-str)))
                (existing (taut-model-get-channel id)))
           (unless existing
             (taut-model-add-channel
              (make-taut-channel
               :id id
-              :name username
+              :name name
               :type 'dm
               :unread-count 0
               :mention-count 0)))
           id)
       (error "Taut API Error: Failed to open DM with %s: %s"
-             user-id (or (cdr (assoc 'error res)) "unknown error")))))
+             users-str (or (cdr (assoc 'error res)) "unknown error")))))
+
 
 (defun taut-api-upload-file (channel-id file-path &optional thread-ts)
   "Upload a file at FILE-PATH to CHANNEL-ID (and optionally THREAD-TS).

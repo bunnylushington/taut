@@ -21,6 +21,7 @@
 (declare-function taut-quit "taut")
 (declare-function taut-reset-layout "taut")
 (declare-function taut-dm-open "taut")
+(declare-function taut-group-dm-open "taut")
 (declare-function taut-sidebar-show "taut-sidebar")
 (declare-function taut-sidebar-bury "taut-sidebar")
 (declare-function taut-inbox-show "taut-inbox")
@@ -93,6 +94,7 @@
    ["Workspace & Navigation"
     ("Z" "Connect to Slack"    taut-connect)
     ("U" "Direct Message (User)" taut-dm-open)
+    ("G" "Group DM (Multi-user)" taut-group-dm-open)
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
     ("I" "Show/Focus Slack Inbox" taut-inbox-show)
     ("W" "Reset Layout"        taut-reset-layout)

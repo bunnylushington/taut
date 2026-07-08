@@ -485,6 +485,37 @@ are immediately applied, even if older byte-compiled (.elc) files exist."
                (message "Error opening DM: %s" (error-message-string err))))))))))
 
 ;;;###autoload
+(defun taut-group-dm-open ()
+  "Start or open a direct message conversation with multiple workspace users."
+  (interactive)
+  (let (users-list)
+    (maphash (lambda (_id user)
+               ;; Exclude current user from selection list as is standard Slack UX
+               (unless (equal (taut-user-id user) taut-current-user-id)
+                 (push (cons (format "%s (%s)" (taut-user-username user) (taut-user-real-name user))
+                             user)
+                       users-list)))
+             taut-users)
+    (if (null users-list)
+        (message "Taut: No other workspace users found.")
+      (let* ((sorted-choices (sort (mapcar #'car users-list) #'string<))
+             (choices (completing-read-multiple "Group DM with Users (comma-separated): " sorted-choices nil t))
+             (selected-users (mapcar (lambda (c) (cdr (assoc c users-list))) choices))
+             (user-ids (mapcar #'taut-user-id selected-users))
+             (usernames (mapcar #'taut-user-username selected-users)))
+        (if (null user-ids)
+            (message "Taut: No users selected.")
+          (message "Opening group direct message with %s..." (mapconcat #'identity usernames ", "))
+          (condition-case err
+              (let ((chan-id (taut-api-open-dm user-ids)))
+                ;; Open the message conversation buffer for the DM channel
+                (taut-message-open chan-id)
+                (message "Opened Group DM with %s!" (mapconcat #'identity usernames ", ")))
+            (error
+             (message "Error opening Group DM: %s" (error-message-string err)))))))))
+
+
+;;;###autoload
 (defun taut-huddle-join ()
   "Join the Slack huddle for the channel under point or current buffer."
   (interactive)
