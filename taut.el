@@ -36,6 +36,8 @@
 (require 'taut-transient)
 (require 'taut-compose)
 (require 'taut-search)
+(require 'taut-cache-browser)
+
 
 ;;;; Global Keybindings for Jumper
 (define-key taut-sidebar-mode-map (kbd "j") #'taut-jump)

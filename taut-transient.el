@@ -85,6 +85,7 @@
 (declare-function taut-channel-set-topic "taut")
 (declare-function taut-channel-archive "taut")
 (declare-function taut-channel-list-members "taut")
+(declare-function taut-cache-browser "taut-cache-browser")
 
 
 ;;;###autoload
@@ -98,6 +99,7 @@
     ("S" "Show/Focus Sidebar"  taut-sidebar-show)
     ("I" "Show/Focus Slack Inbox" taut-inbox-show)
     ("W" "Reset Layout"        taut-reset-layout)
+    ("C" "Media Cache Browser" taut-cache-browser)
     ("F" "Search / Find"       taut-search-quick)
     ("P" "Advanced Search"     taut-search-advanced)
     ("q" "Quit / Bury Pane"    quit-window :if (lambda () (not (eq major-mode 'taut-thread-mode))))
