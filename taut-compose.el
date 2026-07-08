@@ -276,28 +276,42 @@ Insert them as a runnable code block."
                                         process-environment))
              (history-str (shell-command-to-string history-cmd))
              (candidates (delete-dups (split-string history-str "\n" t)))
-             (selected nil)
+             (start-pos (point))
+             (insert-marker nil)
+             (selected-count 0)
              (done nil))
-        ;; Loop prompting for commands
-        (while (not done)
-          (let* ((prompt (if selected
-                             (format "Select command [%d selected] (RET to finish): " (length selected))
-                           "Select command from Atuin (RET to cancel): "))
-                 (choice (completing-read prompt
-                                          (lambda (string pred action)
-                                            (if (eq action 'metadata)
-                                                '(metadata (display-sort-function . identity)
-                                                           (cycle-sort-function . identity))
-                                              (complete-with-action action candidates string pred)))
-                                          nil nil)))
-            (if (string-empty-p choice)
-                (setq done t)
-              (push choice selected))))
-        (when selected
-          (let ((block-str (concat "```bash\n# @taut-runnable\n"
-                                   (mapconcat 'identity (nreverse selected) "\n")
-                                   "\n```\n")))
-            (insert block-str)))))))
+        ;; Pre-insert code block skeleton and place marker inside
+        (insert "```bash\n# @taut-runnable\n\n```\n")
+        (setq insert-marker (copy-marker (+ start-pos (length "```bash\n# @taut-runnable\n"))))
+        (unwind-protect
+            ;; Loop prompting for commands
+            (while (not done)
+              (let* ((prompt (if (> selected-count 0)
+                                 (format "Select command [%d selected] (RET to finish): " selected-count)
+                               "Select command from Atuin (RET to cancel): "))
+                     (choice (completing-read prompt
+                                              (lambda (string pred action)
+                                                (if (eq action 'metadata)
+                                                    '(metadata (display-sort-function . identity)
+                                                               (cycle-sort-function . identity))
+                                                  (complete-with-action action candidates string pred)))
+                                              nil nil)))
+                (if (string-empty-p choice)
+                    (setq done t)
+                  (save-excursion
+                    (goto-char insert-marker)
+                    (insert choice "\n")
+                    (set-marker insert-marker (point)))
+                  (setq selected-count (1+ selected-count))
+                  (redisplay t))))
+          ;; Cleanup and finalization
+          (if (or (not done) (= selected-count 0))
+              (delete-region start-pos (point))
+            (save-excursion
+              (goto-char insert-marker)
+              (when (eq (char-after) ?\n)
+                (delete-char 1))))
+          (set-marker insert-marker nil))))))
 
 ;;;###autoload
 (defun taut-compose-insert-link (url label)
