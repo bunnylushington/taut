@@ -135,7 +135,7 @@
     
     ;; Actions help lines (split into two because they grew too long)
     (let* ((help-str1 "💡 [r/click] Run   [e] Edit       [a] Add          [d] Delete   [q] Quit")
-           (help-str2 "   [u/o] Move Up/Dn [g] Reset Steps [D] Change Dir   [R] Run All"))
+           (help-str2 "   [u/o] Move Up/Dn [g] Reset Steps [c] Change Dir   [R] Run All"))
       (insert (propertize help-str1 'face '(:slant italic :foreground "#8a8a8a")) "\n"
               (propertize help-str2 'face '(:slant italic :foreground "#8a8a8a")) "\n\n"))
     
@@ -462,7 +462,8 @@
 (define-derived-mode taut-shell-steps-mode special-mode "Taut-Steps"
   "Major mode for the Taut interactive shell steps table."
   (setq buffer-read-only t)
-  (setq truncate-lines t))
+  (setq truncate-lines t)
+  (setq-local revert-buffer-function (lambda (&rest _) (taut-shell-steps-reset))))
 
 (provide 'taut-shell-steps)
 ;;; taut-shell-steps.el ends here
