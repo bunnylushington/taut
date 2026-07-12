@@ -4,7 +4,7 @@
 
 ;; Author: bunny@bapi.us
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "26.1") (websocket "1.16") (transient "0.4.0"))
 ;; Keywords: comm, slack
 
 ;;; Commentary:
@@ -19,14 +19,6 @@
 (require 'taut-model)
 (require 'taut-cache)
 
-(defcustom taut-websocket-load-path "/Users/bunnylushington/.emacs.d/straight/build/websocket/"
-  "Directory path to the `websocket' library installation."
-  :type 'directory
-  :group 'taut)
-
-;; Ensure websocket is in the load-path before we require taut-socket
-(when (and taut-websocket-load-path (file-directory-p taut-websocket-load-path))
-  (add-to-list 'load-path taut-websocket-load-path))
 (require 'taut-sidebar)
 (require 'taut-inbox)
 (require 'taut-message)

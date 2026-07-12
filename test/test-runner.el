@@ -22,7 +22,7 @@
 (package-initialize)
 
 ;; Automatically load straight.el packages in batch mode (for websocket, transient, etc.)
-(let ((straight-build-dir (expand-file-name "~/.emacs.d/straight/build/")))
+(let ((straight-build-dir (expand-file-name "straight/build/" user-emacs-directory)))
   (when (file-directory-p straight-build-dir)
     (dolist (dir (directory-files straight-build-dir t "^[a-zA-Z0-9]"))
       (when (and (file-directory-p dir)
