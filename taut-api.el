@@ -417,7 +417,13 @@ the first few public/private channels to populate the activity feed."
         (let ((has-cached-messages (gethash id taut-messages)))
           (when (or (> unreads 0)
                     (> mentions 0)
-                    (and (or (eq type 'dm) starred) (not has-cached-messages)))
+                    (eq type 'dm)
+                    (and (not (eq type 'group)) starred)
+                    (and (eq type 'group) starred (taut-model-channel-active-last-30-days-p id))
+                    (and (boundp 'taut-inbox-include-all-channels)
+                         taut-inbox-include-all-channels
+                         (or (not (eq type 'group))
+                             (taut-model-channel-active-last-30-days-p id))))
             (ignore-errors
               (taut-api-fetch-history id 20)
               (cl-incf fetched-count))))))

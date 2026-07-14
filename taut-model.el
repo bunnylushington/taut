@@ -40,6 +40,13 @@ This is useful during development to see notes and tests sent in your personal D
   :type 'boolean
   :group 'taut)
 
+(defcustom taut-inbox-include-all-channels t
+  "Whether to include the latest message of all channels in the inbox feed.
+If enabled, the inbox will show the latest message of every active channel,
+even if they have no unread messages or mentions."
+  :type 'boolean
+  :group 'taut)
+
 (defcustom taut-consolidate-windows nil
   "Whether and how to consolidate Taut windows into a single tab or frame.
 Accepted values are:
@@ -556,14 +563,21 @@ rolled up by source conversation (channel or DM)."
                                             (and taut-inbox-include-self-dm
                                                  (taut-channel-is-self-dm-p chan))))))
                             msgs))
-              ;; Relevant messages: all for DM, unreads/mentions for channels
+              ;; Relevant messages: all for DM, starred/all-channels (restricted for groups), unreads/mentions for others
               (relevant-msgs
                (cl-remove-if-not
                 (lambda (m)
-                  (if is-dm
-                      t
-                    (or (taut-message-is-unread m)
-                        (taut-message-is-mention m))))
+                  (let ((type (taut-channel-type chan)))
+                    (if (or is-dm
+                            (and (not (eq type 'group)) (taut-channel-is-starred chan))
+                            (and (eq type 'group) (taut-channel-is-starred chan) (taut-model-channel-active-last-30-days-p chan-id))
+                            (and (boundp 'taut-inbox-include-all-channels)
+                                 taut-inbox-include-all-channels
+                                 (or (not (eq type 'group))
+                                     (taut-model-channel-active-last-30-days-p chan-id))))
+                        t
+                      (or (taut-message-is-unread m)
+                          (taut-message-is-mention m)))))
                 non-me-msgs)))
          (when relevant-msgs
            ;; Sort chronologically (ascending by ts)
@@ -574,48 +588,27 @@ rolled up by source conversation (channel or DM)."
                                   (or (taut-message-ts b) "")))))
            (let* ((unread-msgs (cl-remove-if-not #'taut-message-is-unread relevant-msgs))
                   (unread-count (length unread-msgs))
-                  (has-mention (cl-some #'taut-message-is-mention relevant-msgs)))
-             (if (> unread-count 0)
-                 ;; Show the FIRST unread message
-                 (let* ((first-unread (car unread-msgs))
-                        (type (cond
-                               (is-dm 'dm)
-                               (has-mention 'mention)
-                               (t 'channel))))
-                   (push (make-taut-inbox-item
-                          :id (taut-message-ts first-unread)
-                          :type type
-                          :channel-id chan-id
-                          :message-id (taut-message-id first-unread)
-                          :user-id (taut-message-user-id first-unread)
-                          :title (if is-dm
-                                     (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
-                                   (format "#%s" (or (taut-channel-name chan) "unknown")))
-                          :snippet (taut-message-text first-unread)
-                          :ts (taut-message-ts first-unread)
-                          :is-read nil
-                          :unread-count unread-count)
-                         items))
-               ;; No unreads: show LAST message (read DM/mention)
-               (let* ((last-msg (car (last relevant-msgs)))
-                      (type (cond
-                             (is-dm 'dm)
-                             (has-mention 'mention)
-                             (t 'channel))))
-                 (push (make-taut-inbox-item
-                        :id (taut-message-ts last-msg)
-                        :type type
-                        :channel-id chan-id
-                        :message-id (taut-message-id last-msg)
-                        :user-id (taut-message-user-id last-msg)
-                        :title (if is-dm
-                                   (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
-                                 (format "#%s" (or (taut-channel-name chan) "unknown")))
-                        :snippet (taut-message-text last-msg)
-                        :ts (taut-message-ts last-msg)
-                        :is-read t
-                        :unread-count 0)
-                       items)))))))
+                  (has-mention (cl-some #'taut-message-is-mention relevant-msgs))
+                  (last-msg (car (last relevant-msgs)))
+                  (type (cond
+                         (is-dm 'dm)
+                         (has-mention 'mention)
+                         (t 'channel))))
+             (when last-msg
+               (push (make-taut-inbox-item
+                      :id (taut-message-ts last-msg)
+                      :type type
+                      :channel-id chan-id
+                      :message-id (taut-message-id last-msg)
+                      :user-id (taut-message-user-id last-msg)
+                      :title (if is-dm
+                                 (format "DM: @%s" (or (taut-channel-name chan) "unknown"))
+                               (format "#%s" (or (taut-channel-name chan) "unknown")))
+                      :snippet (taut-message-text last-msg)
+                      :ts (taut-message-ts last-msg)
+                      :is-read (<= unread-count 0)
+                      :unread-count unread-count)
+                     items))))))
      taut-channels)
 
     ;; 3: Thread updates

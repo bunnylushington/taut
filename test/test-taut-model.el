@@ -330,5 +330,62 @@
     (should (equal (taut-message-get-url "C_CHAN" "1688400000.000100")
                    "https://slack.com/archives/C_CHAN/p1688400000000100"))))
 
+(ert-deftest taut-model-get-activity-items-group-chats-and-starred-test ()
+  "Test that `taut-model-get-activity-items` filters group chats and starred channels correctly."
+  (taut-model-clear-all)
+  (setq taut-current-user-id "U_ME")
+  
+  ;; 1. Setup channels
+  ;; - Standard starred channel
+  (taut-model-add-channel (make-taut-channel :id "C_STARRED" :name "starred" :type 'public :is-starred t))
+  ;; - Starred group chat (active in last 30 days)
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP_ACTIVE" :name "active-group" :type 'group :is-starred t))
+  ;; - Starred group chat (inactive/stale)
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP_STALE" :name "stale-group" :type 'group :is-starred t))
+  ;; - Standard non-starred channel
+  (taut-model-add-channel (make-taut-channel :id "C_NORMAL" :name "general" :type 'public))
+
+  ;; 2. Add messages
+  (let* ((now (float-time))
+         (recent-ts (number-to-string (- now 1000)))       ; active
+         (stale-ts (number-to-string (- now 3000000)))     ; > 30 days ago (3000000 seconds)
+         (normal-ts (number-to-string (- now 5000))))
+    ;; Starred standard channel has a read message
+    (taut-model-add-message (make-taut-message :id "m1" :channel-id "C_STARRED" :user-id "U_OTHER" :text "hello standard starred" :ts normal-ts))
+    ;; Active group chat has a read message within last 30 days
+    (taut-model-add-message (make-taut-message :id "m2" :channel-id "C_GROUP_ACTIVE" :user-id "U_OTHER" :text "hello active group" :ts recent-ts))
+    ;; Stale group chat has a read message from > 30 days ago
+    (taut-model-add-message (make-taut-message :id "m3" :channel-id "C_GROUP_STALE" :user-id "U_OTHER" :text "hello stale group" :ts stale-ts))
+    ;; Standard non-starred channel has a read message
+    (taut-model-add-message (make-taut-message :id "m4" :channel-id "C_NORMAL" :user-id "U_OTHER" :text "hello normal" :ts normal-ts))
+
+    ;; Case A: taut-inbox-include-all-channels is t (default)
+    (let ((taut-inbox-include-all-channels t))
+      (let ((items (taut-model-get-activity-items)))
+        ;; Should contain:
+        ;; - C_STARRED (starred standard)
+        ;; - C_GROUP_ACTIVE (active group)
+        ;; - C_NORMAL (since include-all-channels is t)
+        ;; But should NOT contain:
+        ;; - C_GROUP_STALE (stale group, since groups must be active in last 30 days)
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_STARRED")) items))
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP_ACTIVE")) items))
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_NORMAL")) items))
+        (should-not (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP_STALE")) items))))
+
+    ;; Case B: taut-inbox-include-all-channels is nil
+    (let ((taut-inbox-include-all-channels nil))
+      (let ((items (taut-model-get-activity-items)))
+        ;; Should contain:
+        ;; - C_STARRED (starred standard)
+        ;; - C_GROUP_ACTIVE (starred active group)
+        ;; But should NOT contain:
+        ;; - C_NORMAL (since include-all-channels is nil)
+        ;; - C_GROUP_STALE (stale group)
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_STARRED")) items))
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP_ACTIVE")) items))
+        (should-not (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_NORMAL")) items))
+        (should-not (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP_STALE")) items))))))
+
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here
