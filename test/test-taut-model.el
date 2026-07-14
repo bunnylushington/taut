@@ -349,15 +349,15 @@
   (let* ((now (float-time))
          (recent-ts (number-to-string (- now 1000)))       ; active
          (stale-ts (number-to-string (- now 3000000)))     ; > 30 days ago (3000000 seconds)
-         (normal-ts (number-to-string (- now 5000))))
+         (yesterday-ts (number-to-string (- now 100000)))) ; yesterday (not today)
     ;; Starred standard channel has a read message
-    (taut-model-add-message (make-taut-message :id "m1" :channel-id "C_STARRED" :user-id "U_OTHER" :text "hello standard starred" :ts normal-ts))
+    (taut-model-add-message (make-taut-message :id "m1" :channel-id "C_STARRED" :user-id "U_OTHER" :text "hello standard starred" :ts yesterday-ts))
     ;; Active group chat has a read message within last 30 days
     (taut-model-add-message (make-taut-message :id "m2" :channel-id "C_GROUP_ACTIVE" :user-id "U_OTHER" :text "hello active group" :ts recent-ts))
     ;; Stale group chat has a read message from > 30 days ago
     (taut-model-add-message (make-taut-message :id "m3" :channel-id "C_GROUP_STALE" :user-id "U_OTHER" :text "hello stale group" :ts stale-ts))
     ;; Standard non-starred channel has a read message
-    (taut-model-add-message (make-taut-message :id "m4" :channel-id "C_NORMAL" :user-id "U_OTHER" :text "hello normal" :ts normal-ts))
+    (taut-model-add-message (make-taut-message :id "m4" :channel-id "C_NORMAL" :user-id "U_OTHER" :text "hello normal" :ts yesterday-ts))
 
     ;; Case A: taut-inbox-include-all-channels is t (default)
     (let ((taut-inbox-include-all-channels t))
@@ -380,12 +380,33 @@
         ;; - C_STARRED (starred standard)
         ;; - C_GROUP_ACTIVE (starred active group)
         ;; But should NOT contain:
-        ;; - C_NORMAL (since include-all-channels is nil)
+        ;; - C_NORMAL (since include-all-channels is nil and message is from yesterday)
         ;; - C_GROUP_STALE (stale group)
         (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_STARRED")) items))
         (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP_ACTIVE")) items))
         (should-not (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_NORMAL")) items))
         (should-not (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP_STALE")) items))))))
+
+(ert-deftest taut-model-get-activity-items-today-persistence-test ()
+  "Test that read messages received today are always retained in the activity items."
+  (taut-model-clear-all)
+  (setq taut-current-user-id "U_ME")
+  
+  ;; 1. Setup standard non-starred channel
+  (taut-model-add-channel (make-taut-channel :id "C_NORMAL" :name "general" :type 'public))
+
+  ;; 2. Add a READ message from TODAY
+  (let* ((now (float-time))
+         (today-ts (number-to-string (- now 10)))) ; 10 seconds ago (today)
+    (taut-model-add-message (make-taut-message :id "m_today" :channel-id "C_NORMAL" :user-id "U_OTHER" :text "hello from today" :ts today-ts :is-unread nil))
+    
+    ;; Even with include-all-channels as nil, it should be included because the message is from today!
+    (let ((taut-inbox-include-all-channels nil))
+      (let ((items (taut-model-get-activity-items)))
+        (should (= (length items) 1))
+        (should (equal (taut-inbox-item-channel-id (car items)) "C_NORMAL"))
+        (should (equal (taut-inbox-item-message-id (car items)) "m_today"))
+        (should (taut-inbox-item-is-read (car items)))))))
 
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here

@@ -463,6 +463,19 @@ If THREAD-TS is provided, formats the URL to link directly to the thread reply."
           (and diff (< diff 2592000))) ; 30 days = 30 * 86400 seconds
       nil)))
 
+(defun taut-model-timestamp-today-p (ts-str)
+  "Check if TS-STR represents a timestamp from today (local time)."
+  (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
+      (let* ((epoch (string-to-number (match-string 1 ts-str)))
+             (now (float-time))
+             (time-val (seconds-to-time epoch))
+             (now-val (seconds-to-time now))
+             (item-days (time-to-days time-val))
+             (now-days (time-to-days now-val))
+             (day-diff (- now-days item-days)))
+        (<= day-diff 0))
+    nil))
+
 ;;;; Derive Gnus-Style Inbox Items
 
 (defun taut-model-get-inbox-items ()
@@ -563,7 +576,7 @@ rolled up by source conversation (channel or DM)."
                                             (and taut-inbox-include-self-dm
                                                  (taut-channel-is-self-dm-p chan))))))
                             msgs))
-              ;; Relevant messages: all for DM, starred/all-channels (restricted for groups), unreads/mentions for others
+              ;; Relevant messages: all for DM, starred/all-channels (restricted for groups), today's messages, or unreads/mentions for others
               (relevant-msgs
                (cl-remove-if-not
                 (lambda (m)
@@ -571,6 +584,7 @@ rolled up by source conversation (channel or DM)."
                     (if (or is-dm
                             (and (not (eq type 'group)) (taut-channel-is-starred chan))
                             (and (eq type 'group) (taut-channel-is-starred chan) (taut-model-channel-active-last-30-days-p chan-id))
+                            (taut-model-timestamp-today-p (taut-message-ts m))
                             (and (boundp 'taut-inbox-include-all-channels)
                                  taut-inbox-include-all-channels
                                  (or (not (eq type 'group))
