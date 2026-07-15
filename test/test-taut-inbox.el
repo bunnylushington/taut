@@ -240,5 +240,33 @@
       ;; Move prev from item 1 should return nil
       (should-not (taut-inbox--move-to-prev-item)))))
 
+(ert-deftest taut-inbox-auto-refresh-timer-test ()
+  "Test the lifecycle of the inbox auto-refresh timer."
+  (let ((taut-inbox-auto-refresh-interval 300)
+        (taut-inbox-auto-refresh-timer nil))
+    ;; 1. Initially nil
+    (should-not taut-inbox-auto-refresh-timer)
+    
+    ;; 2. Start timer
+    (taut-inbox--start-auto-refresh-timer)
+    (should taut-inbox-auto-refresh-timer)
+    (should (timerp taut-inbox-auto-refresh-timer))
+    
+    ;; 3. Stop timer
+    (taut-inbox--stop-auto-refresh-timer)
+    (should-not taut-inbox-auto-refresh-timer))
+  
+  ;; 4. Check buffer local hook behavior
+  (let ((buf (get-buffer-create "*taut-test-inbox-temp*"))
+        (taut-inbox-auto-refresh-interval 300)
+        (taut-inbox-auto-refresh-timer nil))
+    (with-current-buffer buf
+      (taut-inbox-mode)
+      (should taut-inbox-auto-refresh-timer)
+      (should (member 'taut-inbox--stop-auto-refresh-timer kill-buffer-hook))
+      (kill-buffer buf))
+    ;; After killing the buffer, the timer should be stopped and cleared
+    (should-not taut-inbox-auto-refresh-timer)))
+
 (provide 'test-taut-inbox)
 ;;; test-taut-inbox.el ends here

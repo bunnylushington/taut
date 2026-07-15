@@ -24,6 +24,31 @@
 
 (defvar taut-strict-windows)
 
+(defcustom taut-inbox-auto-refresh-interval 300
+  "Interval in seconds to automatically refresh the Slack Inbox.
+Set to nil or 0 to disable automatic refresh."
+  :type '(choice (integer :tag "Interval in seconds")
+                 (const :tag "Disable" nil))
+  :group 'taut)
+
+(defvar taut-inbox-auto-refresh-timer nil
+  "Timer used for periodic refresh of the Slack Inbox buffer.")
+
+(defun taut-inbox--start-auto-refresh-timer ()
+  "Start the periodic inbox auto-refresh timer if configured."
+  (taut-inbox--stop-auto-refresh-timer)
+  (when (and taut-inbox-auto-refresh-interval (> taut-inbox-auto-refresh-interval 0))
+    (setq taut-inbox-auto-refresh-timer
+          (run-with-timer taut-inbox-auto-refresh-interval
+                          taut-inbox-auto-refresh-interval
+                          #'taut-inbox-refresh))))
+
+(defun taut-inbox--stop-auto-refresh-timer ()
+  "Cancel and clear the running auto-refresh timer."
+  (when taut-inbox-auto-refresh-timer
+    (cancel-timer taut-inbox-auto-refresh-timer)
+    (setq taut-inbox-auto-refresh-timer nil)))
+
 
 ;;;; Faces
 
@@ -152,7 +177,9 @@ Can be \\='today, \\='last-7, \\='last-30, or \\='all.")
         truncate-lines t)
   (setq-local taut-inbox-filter 'all)
   (setq-local taut-inbox-date-filter 'last-7)
-  (hl-line-mode 1))
+  (hl-line-mode 1)
+  (taut-inbox--start-auto-refresh-timer)
+  (add-hook 'kill-buffer-hook #'taut-inbox--stop-auto-refresh-timer nil t))
 
 ;;;; Rendering Engine
 
