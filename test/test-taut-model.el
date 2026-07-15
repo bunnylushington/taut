@@ -339,9 +339,9 @@
   ;; - Standard starred channel
   (taut-model-add-channel (make-taut-channel :id "C_STARRED" :name "starred" :type 'public :is-starred t))
   ;; - Starred group chat (active in last 30 days)
-  (taut-model-add-channel (make-taut-channel :id "C_GROUP_ACTIVE" :name "active-group" :type 'group :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP_ACTIVE" :name "active-group" :type 'dm :is-mpim t :is-starred t))
   ;; - Starred group chat (inactive/stale)
-  (taut-model-add-channel (make-taut-channel :id "C_GROUP_STALE" :name "stale-group" :type 'group :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP_STALE" :name "stale-group" :type 'dm :is-mpim t :is-starred t))
   ;; - Standard non-starred channel
   (taut-model-add-channel (make-taut-channel :id "C_NORMAL" :name "general" :type 'public))
 
@@ -414,9 +414,9 @@
   (setq taut-current-user-id "U_ME")
   
   ;; 1. Setup 3 group channels
-  (taut-model-add-channel (make-taut-channel :id "C_GROUP1" :name "group-1" :type 'group :is-starred t))
-  (taut-model-add-channel (make-taut-channel :id "C_GROUP2" :name "group-2" :type 'group :is-starred t))
-  (taut-model-add-channel (make-taut-channel :id "C_GROUP3" :name "group-3" :type 'group :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP1" :name "group-1" :type 'dm :is-mpim t :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP2" :name "group-2" :type 'dm :is-mpim t :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP3" :name "group-3" :type 'dm :is-mpim t :is-starred t))
   
   ;; 2. Add messages with varying timestamps (newest to oldest)
   (let* ((now (float-time))

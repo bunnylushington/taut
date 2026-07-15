@@ -301,7 +301,8 @@ Parsed JSON booleans are t or :json-false."
             :mention-count (or (cdr (assoc 'mention_count c)) 0)
             :is-starred (taut-api--bool (cdr (assoc 'is_starred c)))
             :topic (cdr (assoc 'value (cdr (assoc 'topic c))))
-            :purpose (cdr (assoc 'value (cdr (assoc 'purpose c))))))))))
+            :purpose (cdr (assoc 'value (cdr (assoc 'purpose c))))
+            :is-mpim is-mpim))))))
   (message "Taut: Synced %d active conversations." (hash-table-count taut-channels)))
 
 (defun taut-api-get-or-fetch-channel (channel-id)
@@ -340,7 +341,8 @@ Parsed JSON booleans are t or :json-false."
                                 :mention-count (or (cdr (assoc 'unread_count_display_messages c)) 0)
                                 :is-starred (taut-api--bool (cdr (assoc 'is_starred c)))
                                 :topic (cdr (assoc 'value (cdr (assoc 'topic c))))
-                                :purpose (cdr (assoc 'value (cdr (assoc 'purpose c)))))))
+                                :purpose (cdr (assoc 'value (cdr (assoc 'purpose c))))
+                                :is-mpim is-mpim)))
                 (taut-model-add-channel new-chan)
                 new-chan)))
         (error nil)))))
@@ -417,15 +419,16 @@ the first few public/private channels to populate the activity feed."
         ;; Debug print each channel state to help locate population bugs
         (message "Taut Debug: Channel check: ID=%s, Name=%s, Type=%s, Unreads=%d, Mentions=%d, Starred=%s"
                  id name type unreads mentions (if starred "yes" "no"))
-        (let ((has-cached-messages (gethash id taut-messages)))
+        (let ((has-cached-messages (gethash id taut-messages))
+              (is-group (taut-channel-is-group-p chan)))
           (when (or (> unreads 0)
                     (> mentions 0)
-                    (eq type 'dm)
-                    (and (not (eq type 'group)) starred)
-                    (and (eq type 'group) (member id allowed-groups) starred (taut-model-channel-active-last-30-days-p id))
+                    (and (eq type 'dm) (not is-group))
+                    (and (not is-group) (not (eq type 'dm)) starred)
+                    (and is-group (member id allowed-groups) starred (taut-model-channel-active-last-30-days-p id))
                     (and (boundp 'taut-inbox-include-all-channels)
                          taut-inbox-include-all-channels
-                         (or (not (eq type 'group))
+                         (or (not is-group)
                              (and (member id allowed-groups) (taut-model-channel-active-last-30-days-p id)))))
             (ignore-errors
               (taut-api-fetch-history id 20)

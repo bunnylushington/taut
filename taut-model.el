@@ -295,7 +295,12 @@ DMs, or threads always open in the dedicated Chat/Thread window."
   is-hidden    ; t if the channel is marked as hidden
   topic
   purpose
-  has-active-huddle)
+  has-active-huddle
+  is-mpim)      ; t if multi-person DM (group chat)
+
+(defun taut-channel-is-group-p (chan)
+  "Return t if CHAN is a group chat / multi-person direct message."
+  (and chan (taut-channel-is-mpim chan)))
 
 (cl-defstruct taut-message
   "Represents a single Slack message."
@@ -479,8 +484,7 @@ group chat IDs, sorted by most recent activity. Otherwise, returns
 all active group chat IDs."
   (let* ((all-chans (taut-model-get-channels-list))
          (group-chans (cl-remove-if-not
-                       (lambda (chan)
-                         (eq (taut-channel-type chan) 'group))
+                       #'taut-channel-is-group-p
                        all-chans))
          ;; Helper to get latest message timestamp for a group chat
          (get-latest-ts
@@ -624,16 +628,17 @@ rolled up by source conversation (channel or DM)."
               (relevant-msgs
                (cl-remove-if-not
                   (lambda (m)
-                   (let ((type (taut-channel-type chan)))
-                     (if (or is-dm
-                             (and (not (eq type 'group)) (taut-channel-is-starred chan))
-                             (and (eq type 'group) (member chan-id allowed-groups) (taut-channel-is-starred chan) (taut-model-channel-active-last-30-days-p chan-id))
-                             (if (eq type 'group)
+                   (let ((type (taut-channel-type chan))
+                         (is-group (taut-channel-is-group-p chan)))
+                     (if (or (and is-dm (not is-group))
+                             (and (not is-group) (not is-dm) (taut-channel-is-starred chan))
+                             (and is-group (member chan-id allowed-groups) (taut-channel-is-starred chan) (taut-model-channel-active-last-30-days-p chan-id))
+                             (if is-group
                                  (and (member chan-id allowed-groups) (taut-model-timestamp-today-p (taut-message-ts m)))
                                (taut-model-timestamp-today-p (taut-message-ts m)))
                              (and (boundp 'taut-inbox-include-all-channels)
                                   taut-inbox-include-all-channels
-                                  (or (not (eq type 'group))
+                                  (or (not is-group)
                                       (and (member chan-id allowed-groups) (taut-model-channel-active-last-30-days-p chan-id)))))
                          t
                        (or (taut-message-is-unread m)
