@@ -47,6 +47,15 @@ even if they have no unread messages or mentions."
   :type 'boolean
   :group 'taut)
 
+(defcustom taut-inbox-max-group-chats 10
+  "Maximum number of group chats to load and display in the inbox.
+If non-nil, only the most recently active group chats up to this limit
+will be fetched and displayed. Set to nil for unlimited."
+  :type '(choice (integer :tag "Limit")
+                 (const :tag "Unlimited" nil))
+  :group 'taut)
+
+
 (defcustom taut-consolidate-windows nil
   "Whether and how to consolidate Taut windows into a single tab or frame.
 Accepted values are:
@@ -463,6 +472,37 @@ If THREAD-TS is provided, formats the URL to link directly to the thread reply."
           (and diff (< diff 2592000))) ; 30 days = 30 * 86400 seconds
       nil)))
 
+(defun taut-model-get-allowed-group-chats ()
+  "Get the list of active/allowed group chat channel IDs.
+If `taut-inbox-max-group-chats` is non-nil, returns up to that many
+group chat IDs, sorted by most recent activity. Otherwise, returns
+all active group chat IDs."
+  (let* ((all-chans (taut-model-get-channels-list))
+         (group-chans (cl-remove-if-not
+                       (lambda (chan)
+                         (eq (taut-channel-type chan) 'group))
+                       all-chans))
+         ;; Helper to get latest message timestamp for a group chat
+         (get-latest-ts
+          (lambda (chan)
+            (let* ((msgs (taut-model-get-messages (taut-channel-id chan)))
+                   (latest-msg (car (last msgs))))
+              (if latest-msg
+                  (or (and (taut-message-ts latest-msg)
+                           (string-to-number (taut-message-ts latest-msg)))
+                      0)
+                0))))
+         ;; Sort group chats by latest message timestamp descending
+         (sorted-groups (sort group-chans
+                              (lambda (a b)
+                                (> (funcall get-latest-ts a)
+                                   (funcall get-latest-ts b)))))
+         (sorted-ids (mapcar #'taut-channel-id sorted-groups)))
+    (if (and taut-inbox-max-group-chats (> taut-inbox-max-group-chats 0))
+        (cl-subseq sorted-ids 0 (min (length sorted-ids) taut-inbox-max-group-chats))
+      sorted-ids)))
+
+
 (defun taut-model-timestamp-today-p (ts-str)
   "Check if TS-STR represents a timestamp from today (local time)."
   (if (and ts-str (string-match "^\\([0-9]+\\)" ts-str))
@@ -562,7 +602,8 @@ Unified Inbox contains:
   "Query and construct a list of active and recent `taut-inbox-item' objects.
 Includes unread and read items across channels, DMs, mentions, and threads,
 rolled up by source conversation (channel or DM)."
-  (let (items)
+  (let ((allowed-groups (taut-model-get-allowed-group-chats))
+        items)
     ;; 1 & 2: DMs, Mentions, and Unread Channel Messages (grouped by channel)
     (maphash
      (lambda (chan-id chan)
@@ -579,20 +620,22 @@ rolled up by source conversation (channel or DM)."
               ;; Relevant messages: all for DM, starred/all-channels (restricted for groups), today's messages, or unreads/mentions for others
               (relevant-msgs
                (cl-remove-if-not
-                (lambda (m)
-                  (let ((type (taut-channel-type chan)))
-                    (if (or is-dm
-                            (and (not (eq type 'group)) (taut-channel-is-starred chan))
-                            (and (eq type 'group) (taut-channel-is-starred chan) (taut-model-channel-active-last-30-days-p chan-id))
-                            (taut-model-timestamp-today-p (taut-message-ts m))
-                            (and (boundp 'taut-inbox-include-all-channels)
-                                 taut-inbox-include-all-channels
-                                 (or (not (eq type 'group))
-                                     (taut-model-channel-active-last-30-days-p chan-id))))
-                        t
-                      (or (taut-message-is-unread m)
-                          (taut-message-is-mention m)))))
-                non-me-msgs)))
+                  (lambda (m)
+                   (let ((type (taut-channel-type chan)))
+                     (if (or is-dm
+                             (and (not (eq type 'group)) (taut-channel-is-starred chan))
+                             (and (eq type 'group) (member chan-id allowed-groups) (taut-channel-is-starred chan) (taut-model-channel-active-last-30-days-p chan-id))
+                             (if (eq type 'group)
+                                 (and (member chan-id allowed-groups) (taut-model-timestamp-today-p (taut-message-ts m)))
+                               (taut-model-timestamp-today-p (taut-message-ts m)))
+                             (and (boundp 'taut-inbox-include-all-channels)
+                                  taut-inbox-include-all-channels
+                                  (or (not (eq type 'group))
+                                      (and (member chan-id allowed-groups) (taut-model-channel-active-last-30-days-p chan-id)))))
+                         t
+                       (or (taut-message-is-unread m)
+                           (taut-message-is-mention m)))))
+                 non-me-msgs)))
          (when relevant-msgs
            ;; Sort chronologically (ascending by ts)
            (setq relevant-msgs

@@ -403,6 +403,7 @@ the first few public/private channels to populate the activity feed."
   (interactive)
   (message "Taut: Pre-fetching inbox activity history...")
   (let ((channels (taut-model-get-channels-list))
+        (allowed-groups (taut-model-get-allowed-group-chats))
         (fetched-count 0))
     (dolist (chan channels)
       (let* ((id (taut-channel-id chan))
@@ -419,11 +420,11 @@ the first few public/private channels to populate the activity feed."
                     (> mentions 0)
                     (eq type 'dm)
                     (and (not (eq type 'group)) starred)
-                    (and (eq type 'group) starred (taut-model-channel-active-last-30-days-p id))
+                    (and (eq type 'group) (member id allowed-groups) starred (taut-model-channel-active-last-30-days-p id))
                     (and (boundp 'taut-inbox-include-all-channels)
                          taut-inbox-include-all-channels
                          (or (not (eq type 'group))
-                             (taut-model-channel-active-last-30-days-p id))))
+                             (and (member id allowed-groups) (taut-model-channel-active-last-30-days-p id)))))
             (ignore-errors
               (taut-api-fetch-history id 20)
               (cl-incf fetched-count))))))

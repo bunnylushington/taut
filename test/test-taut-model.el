@@ -408,5 +408,41 @@
         (should (equal (taut-inbox-item-message-id (car items)) "m_today"))
         (should (taut-inbox-item-is-read (car items)))))))
 
+(ert-deftest taut-model-max-group-chats-limit-test ()
+  "Test that `taut-inbox-max-group-chats` correctly limits loaded/rendered group chats."
+  (taut-model-clear-all)
+  (setq taut-current-user-id "U_ME")
+  
+  ;; 1. Setup 3 group channels
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP1" :name "group-1" :type 'group :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP2" :name "group-2" :type 'group :is-starred t))
+  (taut-model-add-channel (make-taut-channel :id "C_GROUP3" :name "group-3" :type 'group :is-starred t))
+  
+  ;; 2. Add messages with varying timestamps (newest to oldest)
+  (let* ((now (float-time))
+         (ts1 (number-to-string (- now 10)))    ;; newest
+         (ts2 (number-to-string (- now 100)))   ;; second newest
+         (ts3 (number-to-string (- now 1000)))) ;; oldest
+    (taut-model-add-message (make-taut-message :id "m1" :channel-id "C_GROUP1" :user-id "U_OTHER" :text "newest group" :ts ts1))
+    (taut-model-add-message (make-taut-message :id "m2" :channel-id "C_GROUP2" :user-id "U_OTHER" :text "middle group" :ts ts2))
+    (taut-model-add-message (make-taut-message :id "m3" :channel-id "C_GROUP3" :user-id "U_OTHER" :text "oldest group" :ts ts3))
+    
+    ;; 3. Test with taut-inbox-max-group-chats = 2
+    (let ((taut-inbox-max-group-chats 2)
+          (taut-inbox-include-all-channels t))
+      (let ((allowed (taut-model-get-allowed-group-chats))
+            (items (taut-model-get-activity-items)))
+        ;; Check allowed IDs
+        (should (= (length allowed) 2))
+        (should (member "C_GROUP1" allowed))
+        (should (member "C_GROUP2" allowed))
+        (should-not (member "C_GROUP3" allowed))
+        
+        ;; Check rendered activity items
+        (should (= (length items) 2))
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP1")) items))
+        (should (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP2")) items))
+        (should-not (cl-some (lambda (item) (equal (taut-inbox-item-channel-id item) "C_GROUP3")) items))))))
+
 (provide 'test-taut-model)
 ;;; test-taut-model.el ends here
