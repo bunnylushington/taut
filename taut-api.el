@@ -17,6 +17,8 @@
 (require 'taut-model)
 (require 'auth-source)
 
+(defvar taut-inbox-max-group-chats)
+
 ;;;; User Tokens and Configuration
 
 (defcustom taut-bot-token nil

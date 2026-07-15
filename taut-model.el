@@ -498,9 +498,12 @@ all active group chat IDs."
                                 (> (funcall get-latest-ts a)
                                    (funcall get-latest-ts b)))))
          (sorted-ids (mapcar #'taut-channel-id sorted-groups)))
-    (if (and taut-inbox-max-group-chats (> taut-inbox-max-group-chats 0))
-        (cl-subseq sorted-ids 0 (min (length sorted-ids) taut-inbox-max-group-chats))
-      sorted-ids)))
+    (let ((limit (if (boundp 'taut-inbox-max-group-chats)
+                     taut-inbox-max-group-chats
+                   10)))
+      (if (and limit (> limit 0))
+          (cl-subseq sorted-ids 0 (min (length sorted-ids) limit))
+        sorted-ids))))
 
 
 (defun taut-model-timestamp-today-p (ts-str)
